@@ -1,12 +1,40 @@
 import { GoogleGenAI } from "@google/genai";
-import { User, Match, PlayerLevel } from '../types';
+import { Match, User } from '../types';
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+let aiClient: GoogleGenAI | null | undefined;
+
+const readGeminiApiKey = (): string => {
+  return (
+    import.meta.env.VITE_GEMINI_API_KEY
+    || process.env.GEMINI_API_KEY
+    || process.env.API_KEY
+    || ''
+  ).trim();
+};
+
+const getGeminiClient = (): GoogleGenAI | null => {
+  if (aiClient !== undefined) {
+    return aiClient;
+  }
+
+  const apiKey = readGeminiApiKey();
+  aiClient = apiKey ? new GoogleGenAI({ apiKey }) : null;
+  return aiClient;
+};
+
+// Gemini is optional. These helpers must never block app startup.
+const matchFitFallback = "El asistente de IA no está configurado en este entorno.";
+const tacticalTipFallback = "Visualiza tu próximo golpe.";
 
 // Analyze if a match is good for the player based on ELO/Level/Reputation
 export const analyzeMatchFit = async (user: User, match: Match, otherPlayers: User[]): Promise<string> => {
+  const ai = getGeminiClient();
+  if (!ai) {
+    return matchFitFallback;
+  }
+
   const model = 'gemini-3-flash-preview';
-  
+
   const prompt = `
     Act as a professional Padel Coach and Matchmaking Algorithm.
     
@@ -29,7 +57,7 @@ export const analyzeMatchFit = async (user: User, match: Match, otherPlayers: Us
 
   try {
     const response = await ai.models.generateContent({
-      model: model,
+      model,
       contents: prompt,
     });
     return response.text || "Análisis no disponible en este momento.";
@@ -41,19 +69,24 @@ export const analyzeMatchFit = async (user: User, match: Match, otherPlayers: Us
 
 // Generate a quick tactical tip based on recent performance (mocked concept)
 export const getTacticalTip = async (level: number): Promise<string> => {
+  const ai = getGeminiClient();
+  if (!ai) {
+    return tacticalTipFallback;
+  }
+
   const model = 'gemini-3-flash-preview';
   const prompt = `
     Dame un consejo táctico avanzado de Padel para un jugador de nivel ${level} (Escala 1-7).
-    Manténlo corto, motivador y técnico. Máximo 20 palabras. En Español.
+    Mantenlo corto, motivador y técnico. Máximo 20 palabras. En Español.
   `;
 
   try {
     const response = await ai.models.generateContent({
-      model: model,
+      model,
       contents: prompt,
     });
     return response.text || "Mantén la posición en la red.";
   } catch (error) {
-    return "Visualiza tu próximo golpe.";
+    return tacticalTipFallback;
   }
 };

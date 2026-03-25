@@ -17,13 +17,18 @@ export enum PlayerLevel {
 // Entities
 export interface User {
   id: string;
+  backendUserId?: number;
+  backendPlayerProfileId?: number;
+  email?: string;
   name: string;
   avatar: string; // URL
   level: number; // 1.0 to 7.0
+  hasOfficialRating?: boolean;
   categoryNumber?: number;
   categoryName?: string;
   isCategoryVerified?: boolean;
   verificationStatus?: 'none' | 'pending' | 'verified' | 'rejected';
+  surveyCompleted?: boolean;
   publicCategoryNumber?: number | null;
   matchesPlayed: number;
   reputation: number; // 0 to 100%
@@ -45,6 +50,8 @@ export interface Club {
 export interface Match {
   id: string;
   clubId: string;
+  clubName?: string | null;
+  backendClubId?: number | null;
   courtName: string;
   date: string; // ISO string
   time: string; // HH:mm
@@ -56,7 +63,17 @@ export interface Match {
   maxPlayers: number;
   levelRange: [number, number]; // e.g., [3.5, 4.5]
   isPrivate: boolean;
-  status: 'open' | 'confirmed' | 'pending_approval' | 'completed' | 'awaiting_result' | 'awaiting_validation';
+  status: 'open' | 'confirmed' | 'pending_approval' | 'completed' | 'awaiting_result' | 'awaiting_validation' | 'cancelled';
+  matchSource?: 'backend' | 'backend-tournament' | 'local';
+  backendMatchId?: number;
+  backendStatus?: 'OPEN' | 'FULL' | 'CANCELLED' | 'RESULT_PENDING' | 'COMPLETED' | 'SCHEDULED';
+  backendResultStatus?: 'PENDING' | 'CONFIRMED' | 'REJECTED' | null;
+  createdByPlayerProfileId?: number;
+  locationText?: string | null;
+  notes?: string;
+  authenticatedPlayerTeam?: 'TEAM_ONE' | 'TEAM_TWO' | null;
+  authenticatedPlayerWon?: boolean | null;
+  teamsAssigned?: boolean;
   pendingPlayerIds?: string[]; // IDs of users requesting to join
   rejectedPlayerIds?: string[]; // IDs of users rejected by the lobby
   approvedGuestIds?: string[]; // IDs of users who requested and were approved, ready to join

@@ -12,7 +12,24 @@ import { ClubUsersView } from './components/ClubUsersView';
 import { ClubAgendaView } from './components/ClubAgendaView';
 import { PublicProfileView } from './components/PublicProfileView';
 import { computeMatchRatingUpdatesElo, EloMatchInput } from './utils/eloCalculator';
-import { getTacticalTip } from './services/geminiService';
+import { ACCESS_TOKEN_STORAGE_KEY, backendApi, BackendApiError, clearAccessToken, storeAccessToken, type MyMatchesScope } from './services/backendApi';
+import { buildFrontendUser, clearStoredDisplayName, isNotFoundError, readStoredDisplayName, storeDisplayName } from './services/authOnboardingSession';
+import { buildAutoTeamAssignments, buildClubLookup, buildSubmitResultRequest, combineFrontendMatchDateTime, isBackendManagedMatch, isBackendMatchCreator, mapScopedPlayerMatches, mergeBackendMatches } from './services/matchBackendIntegration';
+import { findRankingPosition, mapRankingRows, mapRatingHistory } from './services/ratingHistoryIntegration';
+import {
+    buildCreateLeagueTournamentRequest,
+    buildSubmitTournamentResultRequest,
+    buildSyncTournamentEntriesRequest,
+    buildTournamentClubOptions,
+    buildTournamentSelectablePlayers,
+    getBackendClubId,
+    getBackendTournamentId,
+    isBackendTournamentMatch,
+    isTournamentParticipant,
+    sortMatchesByScheduledDateAsc,
+    toFrontendTournament,
+    toFrontendTournamentMatches,
+} from './services/tournamentBackendIntegration';
 import { Plus, Search, Filter, Trophy, Star, TrendingUp, Calendar, MapPin, ChevronRight, ChevronDown, ChevronLeft, BarChart3, Settings, Users, Zap, GraduationCap, Swords, Clock, CheckCircle, AlertCircle, AlertTriangle, CalendarRange, Sparkles, Bell, BadgeCheck, Lock, TrendingDown, Heart, ArrowLeft, Info, Check, Share2, Wallet, UserPlus, Grid, X, Crown, BrainCircuit, Medal, Handshake, Skull, List, Gift, Network, Link, Copy, Trash2, Store, DollarSign, Archive } from 'lucide-react';
 import { LineChart, Line, XAxis, Tooltip, ResponsiveContainer, YAxis, CartesianGrid, LabelList } from 'recharts';
 
@@ -404,15 +421,23 @@ const getCategory = (level: number) => {
 
 interface ViewProps {
     currentUser: User;
+    rankingPosition?: number | null;
+    rankingRows?: ReturnType<typeof mapRankingRows>;
+    ratingHistory?: ReturnType<typeof mapRatingHistory>;
+    myMatchesByScope?: ScopedMyMatches;
     navigateTo?: (tab: string) => void;
     onOpenCoaches?: () => void;
     agenda?: AgendaItem[];
+    clubs?: Club[];
     matches?: Match[];
     tournaments?: any[];
     onJoin?: (id: string, slotIndex: number) => void;
     onRequest?: (id: string) => void;
+    onLeaveMatch?: (matchId: string) => void;
+    onCancelMatch?: (matchId: string) => void;
     onSubmitResult?: (matchId: string, result: [number, number][]) => void;
     onConfirmResult?: (matchId: string) => void;
+    onRejectResult?: (matchId: string) => void;
     onBook?: (match: Match) => void;
     onOpenClubRankings?: () => void;
     onOpenTopPartners?: () => void;
@@ -428,7 +453,23 @@ interface ViewProps {
     onAddTeamsToTournament?: (tournament: any) => void;
     onAddResult?: (match: Match) => void;
     onArchiveTournament?: (tournamentId: string) => void;
+    onJoinTournament?: (tournament: any) => void;
+    onLeaveTournament?: (tournament: any) => void;
 }
+
+type ScopedMyMatches = {
+    upcoming: Match[];
+    completed: Match[];
+    cancelled: Match[];
+    pendingResult: Match[];
+};
+
+const EMPTY_SCOPED_MY_MATCHES: ScopedMyMatches = {
+    upcoming: [],
+    completed: [],
+    cancelled: [],
+    pendingResult: [],
+};
 
 const ClubDashboardView: React.FC<ViewProps> = ({ onOpenClubUsers, onOpenClubAgenda }) => {
     return (
@@ -512,10 +553,13 @@ const TournamentStatusView: React.FC<{
     currentUser: User, 
     matches: Match[], 
     onClose: () => void,
-    onAddResult?: (match: Match) => void
-}> = ({ tournament, currentUser, matches, onClose, onAddResult }) => {
+    onAddResult?: (match: Match) => void,
+    onUserClick?: (user: User) => void
+}> = ({ tournament, currentUser, matches, onClose, onAddResult, onUserClick }) => {
     const [activeTab, setActiveTab] = useState<'matches' | 'standings'>('matches');
     const isCreator = tournament.creatorId === currentUser.id;
+    const isBackendLeagueTournament = Boolean(tournament?.isBackendTournament && tournament?.format === 'league');
+    const backendLeagueStandings = tournament?.backendStandings?.standings ?? [];
 
     const config = tournament.launchConfig?.generatedData || {};
     const groups = config.groups || [];
@@ -829,13 +873,14 @@ const TournamentStatusView: React.FC<{
                                                     </span>
                                                 </div>
                                             </div>
-                                            {isCreator && (
+                                            {((isBackendLeagueTournament && match.players.some(p => p?.id === currentUser.id))
+                                                || (!isBackendLeagueTournament && isCreator)) && match.status !== 'completed' && (
                                                 <div className="mt-2 pt-2 border-t border-dark-700 flex justify-end">
                                                     <button 
                                                         onClick={() => onAddResult && onAddResult(match)}
                                                         className="text-xs text-amber-500 font-bold hover:text-amber-400 transition-colors"
                                                     >
-                                                        {match.status === 'completed' ? 'Editar Resultado' : 'Cargar Resultado'}
+                                                        {match.status === 'awaiting_validation' ? 'Validar Resultado' : 'Cargar Resultado'}
                                                     </button>
                                                 </div>
                                             )}
@@ -854,7 +899,46 @@ const TournamentStatusView: React.FC<{
 
                 {activeTab === 'standings' && (
                     <div className="space-y-6">
-                        {isAmericanoDinamico ? (
+                        {isBackendLeagueTournament ? (
+                            <div className="bg-dark-800 border border-dark-700 rounded-xl overflow-hidden">
+                                <div className="bg-dark-700/50 px-4 py-2 border-b border-dark-700">
+                                    <h5 className="text-white font-bold text-sm">Tabla General</h5>
+                                </div>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-xs">
+                                        <thead className="bg-dark-900/50 text-gray-400">
+                                            <tr>
+                                                <th className="px-3 py-2 font-medium">Equipo</th>
+                                                <th className="px-2 py-2 font-medium text-center">PTS</th>
+                                                <th className="px-2 py-2 font-medium text-center">PJ</th>
+                                                <th className="px-2 py-2 font-medium text-center">PG</th>
+                                                <th className="px-2 py-2 font-medium text-center">Dif. Games</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-dark-700">
+                                            {backendLeagueStandings.map((team: any) => (
+                                                <tr key={team.tournamentEntryId} className="text-gray-200">
+                                                    <td className="px-3 py-2 font-medium truncate max-w-[160px]">{team.teamName}</td>
+                                                    <td className="px-2 py-2 text-center font-bold text-white">{team.points}</td>
+                                                    <td className="px-2 py-2 text-center">{team.played}</td>
+                                                    <td className="px-2 py-2 text-center text-emerald-400">{team.wins}</td>
+                                                    <td className="px-2 py-2 text-center text-blue-400">
+                                                        {team.gamesDifference > 0 ? `+${team.gamesDifference}` : team.gamesDifference}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                            {backendLeagueStandings.length === 0 && (
+                                                <tr>
+                                                    <td colSpan={5} className="px-3 py-6 text-center text-gray-500">
+                                                        La tabla se actualizará cuando haya resultados confirmados.
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        ) : isAmericanoDinamico ? (
                             <div className="bg-dark-800 border border-dark-700 rounded-xl overflow-hidden">
                                 <div className="bg-dark-700/50 px-4 py-2 border-b border-dark-700">
                                     <h5 className="text-white font-bold text-sm">Clasificación Individual</h5>
@@ -968,6 +1052,7 @@ const LaunchTournamentView: React.FC<{ tournament: any, matches: Match[], onClos
     const [autoGenerate, setAutoGenerate] = useState<boolean>(true);
     const [availableCourts, setAvailableCourts] = useState<number>(tournament?.availableCourts || 1);
     const [generatedData, setGeneratedData] = useState<any | null>(null);
+    const lockToLeagueBackend = Boolean(tournament?.isBackendTournament && tournament?.format === 'league');
 
     const handleGenerate = () => {
         let teamsToUse: any[] = [];
@@ -1429,6 +1514,9 @@ const LaunchTournamentView: React.FC<{ tournament: any, matches: Match[], onClos
         onLaunch({
             format,
             americanoType: format === 'americano' ? americanoType : undefined,
+            availableCourts,
+            courtNames: tournament.courtNames,
+            leagueRounds: leagueFormat === 'dos_rondas' ? 2 : 1,
             numGroups,
             qualifiers,
             autoGenerate,
@@ -1479,18 +1567,27 @@ const LaunchTournamentView: React.FC<{ tournament: any, matches: Match[], onClos
                                 ].map(f => (
                                     <button
                                         key={f.id}
-                                        onClick={() => setFormat(f.id as any)}
+                                        onClick={() => {
+                                            if (lockToLeagueBackend) return;
+                                            setFormat(f.id as any);
+                                        }}
                                         className={`flex flex-col items-center justify-center p-3 rounded-xl border transition-all ${
                                             format === f.id 
                                             ? 'bg-amber-500/20 border-amber-500 text-amber-500' 
                                             : 'bg-dark-800 border-dark-700 text-gray-400 hover:border-gray-500'
                                         }`}
+                                        disabled={lockToLeagueBackend}
                                     >
                                         {f.icon}
                                         <span className="text-[10px] font-bold mt-1 uppercase">{f.label}</span>
                                     </button>
                                 ))}
                             </div>
+                            {lockToLeagueBackend && (
+                                <p className="text-gray-500 text-[10px]">
+                                    Este torneo ya fue creado como liga. El backend usará ese formato oficial al lanzarlo.
+                                </p>
+                            )}
                         </div>
 
                         {format === 'eliminatoria' && (
@@ -1730,7 +1827,7 @@ const LaunchTournamentView: React.FC<{ tournament: any, matches: Match[], onClos
     );
 };
 
-const AddTeamsToTournamentView: React.FC<{ currentUser: User, tournament: any, onClose: () => void, onUpdate: (data: any) => void }> = ({ currentUser, tournament, onClose, onUpdate }) => {
+const AddTeamsToTournamentView: React.FC<{ currentUser: User, tournament: any, availablePlayers?: User[], onClose: () => void, onUpdate: (data: any) => void }> = ({ currentUser, tournament, availablePlayers = [currentUser, ...MOCK_FRIENDS], onClose, onUpdate }) => {
     // Extract existing players from tournament teams
     const initialPlayers = tournament.teams ? tournament.teams.flatMap((t: any) => t.players) : [];
     const initialPlayerIds = useMemo(() => new Set(initialPlayers.map((p: any) => p.id)), [initialPlayers]);
@@ -1768,14 +1865,19 @@ const AddTeamsToTournamentView: React.FC<{ currentUser: User, tournament: any, o
         return options;
     }, [tournament.startDate, tournament.endDate]);
 
+    const selectablePlayers = useMemo(
+        () => Array.from(new Map(availablePlayers.map(user => [user.id, user])).values()),
+        [availablePlayers],
+    );
+
     const filteredUsers = useMemo(() => {
         if (!searchQuery) return [];
         const query = searchQuery.toLowerCase();
-        return [currentUser, ...MOCK_FRIENDS].filter(u => 
+        return selectablePlayers.filter(u => 
             u.name.toLowerCase().includes(query) && 
             !selectedPlayers.some(sp => sp.id === u.id)
         );
-    }, [searchQuery, selectedPlayers, currentUser]);
+    }, [searchQuery, selectablePlayers, selectedPlayers]);
 
     const addPlayer = (user: User) => {
         if (selectedPlayers.length < maxPlayers) {
@@ -1864,7 +1966,7 @@ const AddTeamsToTournamentView: React.FC<{ currentUser: User, tournament: any, o
 
                         {/* Carousel */}
                         <div className="flex overflow-x-auto gap-2 scrollbar-hide pb-1 items-center flex-1">
-                            {(searchQuery ? filteredUsers : [currentUser, ...MOCK_FRIENDS].filter(f => !selectedPlayers.some(sp => sp.id === f.id))).map(user => (
+                            {(searchQuery ? filteredUsers : selectablePlayers.filter(f => !selectedPlayers.some(sp => sp.id === f.id))).map(user => (
                                 <button 
                                     key={user.id}
                                     onClick={() => addPlayer(user)}
@@ -1996,7 +2098,7 @@ const AddTeamsToTournamentView: React.FC<{ currentUser: User, tournament: any, o
     );
 };
 
-const CreateTournamentView: React.FC<{ currentUser: User, onClose: () => void, onCreate: (data: any) => void }> = ({ currentUser, onClose, onCreate }) => {
+const CreateTournamentView: React.FC<{ currentUser: User, selectablePlayers?: User[], clubOptions?: Club[], onClose: () => void, onCreate: (data: any) => void }> = ({ currentUser, selectablePlayers = [currentUser, ...MOCK_FRIENDS], clubOptions = MOCK_CLUBS, onClose, onCreate }) => {
     const [name, setName] = useState<string>('');
     const [rules, setRules] = useState<string>('');
     const [cost, setCost] = useState<string>('');
@@ -2079,8 +2181,7 @@ const CreateTournamentView: React.FC<{ currentUser: User, onClose: () => void, o
     };
 
     // Combine mocks for searching
-    const ALL_USERS = [currentUser, ...MOCK_FRIENDS, ...MOCK_TOP_PARTNERS.map(p => ({...p, level: 4.5, matchesPlayed: 20, reputation: 90} as any))];
-    const uniqueUsers = Array.from(new Map(ALL_USERS.map(user => [user.id, user])).values());
+    const uniqueUsers = Array.from(new Map(selectablePlayers.map(user => [user.id, user])).values());
 
     const filteredUsers = uniqueUsers.filter(u => 
         u.name.toLowerCase().includes(searchQuery.toLowerCase()) && 
@@ -2254,7 +2355,7 @@ const CreateTournamentView: React.FC<{ currentUser: User, onClose: () => void, o
                     </div>
                     
                     <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide -mx-2 px-2">
-                        {MOCK_CLUBS.map(club => (
+                        {clubOptions.map(club => (
                             <button
                                 key={club.id}
                                 onClick={() => setSelectedClub(club.id)}
@@ -2686,7 +2787,7 @@ const CreateTournamentView: React.FC<{ currentUser: User, onClose: () => void, o
                         courtNames: courtNames.slice(0, availableCourts),
                         isCompetitive,
                         clubId: selectedClub,
-                        clubName: MOCK_CLUBS.find(c => c.id === selectedClub)?.name,
+                        clubName: clubOptions.find(c => c.id === selectedClub)?.name,
                         teams: pairs.filter(p => p.length === 2).map(p => ({
                             players: p,
                             teamName: teamNames[`${p[0].id}-${p[1].id}`] || `${p[0].name.split(' ')[0]} & ${p[1].name.split(' ')[0]}`,
@@ -2957,6 +3058,211 @@ const NationalRankingView: React.FC<{ currentUser: User, onClose: () => void }> 
                                     </td>
                                     <td className="py-2 px-1 text-right text-padel-300 text-[10px] w-8">{userPosition.points}</td>
                                     <td className="py-2 px-1 text-right text-padel-400 font-black text-[10px] w-8">{userPosition.rating}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const NationalRankingBackendView: React.FC<{
+    currentUser: User;
+    rankingRows: ReturnType<typeof mapRankingRows>;
+    rankingPosition: number | null;
+    onClose: () => void;
+}> = ({ currentUser, rankingRows, rankingPosition, onClose }) => {
+    const [selectedCity, setSelectedCity] = useState<string>('Todas');
+    const [selectedClub, setSelectedClub] = useState<string>('Todos');
+    const [selectedGender, setSelectedGender] = useState<string>('Todos');
+    const [selectedCategory, setSelectedCategory] = useState<string>('Todas');
+    const [selectedAge, setSelectedAge] = useState<string>('Todas');
+
+    const CITIES = useMemo(
+        () => ['Todas', ...Array.from(new Set(rankingRows.map(player => player.cityName).filter((city): city is string => Boolean(city))))],
+        [rankingRows],
+    );
+    const GENDERS = ['Todos', 'Hombre', 'Mujer'];
+    const CATEGORIES = ['Todas', '1ª', '2ª', '3ª', '4ª', '5ª', '6ª', '7ª'];
+    const AGES = ['Todas', 'Sub 18', '19-25', '26-30', '>30', '>40', '>50'];
+
+    const filteredPlayers = rankingRows.filter(player => {
+        const cityMatches = selectedCity === 'Todas' || player.cityName === selectedCity;
+        const categoryMatches = selectedCategory === 'Todas' || player.categoryLabel === selectedCategory;
+        return cityMatches && categoryMatches;
+    });
+    const topPlayers = filteredPlayers.slice(0, 10);
+    const userPosition = rankingRows.find(player => player.playerProfileId === currentUser.backendPlayerProfileId) ?? null;
+
+    return (
+        <div className="fixed inset-0 bg-dark-900 z-[100] flex flex-col animate-fade-in overflow-y-auto">
+            <div className="px-4 py-4 flex items-center gap-3 bg-dark-800 border-b border-dark-700 shrink-0 sticky top-0 z-20">
+                <button onClick={onClose} className="p-2 rounded-full hover:bg-dark-700 transition-colors">
+                    <ArrowLeft size={20} className="text-gray-200" />
+                </button>
+                <div>
+                    <h2 className="text-white font-bold text-lg leading-tight flex items-center gap-2">
+                        Ranking Nacional <Crown size={16} className="text-amber-500" fill="currentColor"/>
+                    </h2>
+                    <p className="text-gray-400 text-xs">Uruguay</p>
+                </div>
+            </div>
+
+            <div className="p-4 space-y-6 pb-safe">
+                <div className="bg-dark-800 rounded-2xl border border-dark-700 p-4 space-y-4">
+                    <div className="flex items-center gap-2 mb-2">
+                        <Filter size={16} className="text-padel-400" />
+                        <h3 className="text-white font-bold text-sm">Filtros</h3>
+                    </div>
+
+                    <div className="grid grid-cols-5 gap-1.5">
+                        <div>
+                            <label className="text-[9px] text-gray-500 font-bold uppercase mb-0.5 block truncate">Ciudad</label>
+                            <div className="relative">
+                                <select value={selectedCity} onChange={(e) => setSelectedCity(e.target.value)} className="w-full bg-dark-900 border border-dark-700 text-white text-[10px] rounded-md p-1.5 pr-4 appearance-none focus:outline-none focus:border-padel-500 transition-colors truncate">
+                                    {CITIES.map(city => (
+                                        <option key={city} value={city}>{city}</option>
+                                    ))}
+                                </select>
+                                <ChevronDown size={12} className="absolute right-1 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="text-[9px] text-gray-500 font-bold uppercase mb-0.5 block truncate">Club</label>
+                            <div className="relative">
+                                <select value={selectedClub} onChange={(e) => setSelectedClub(e.target.value)} className="w-full bg-dark-900 border border-dark-700 text-white text-[10px] rounded-md p-1.5 pr-4 appearance-none focus:outline-none focus:border-padel-500 transition-colors truncate">
+                                    <option value="Todos">Todos</option>
+                                    {MOCK_CLUBS.map(club => (
+                                        <option key={club.id} value={club.id}>{club.name}</option>
+                                    ))}
+                                </select>
+                                <ChevronDown size={12} className="absolute right-1 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="text-[9px] text-gray-500 font-bold uppercase mb-0.5 block truncate">Sexo</label>
+                            <div className="relative">
+                                <select value={selectedGender} onChange={(e) => setSelectedGender(e.target.value)} className="w-full bg-dark-900 border border-dark-700 text-white text-[10px] rounded-md p-1.5 pr-4 appearance-none focus:outline-none focus:border-padel-500 transition-colors truncate">
+                                    {GENDERS.map(gender => (
+                                        <option key={gender} value={gender}>{gender}</option>
+                                    ))}
+                                </select>
+                                <ChevronDown size={12} className="absolute right-1 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="text-[9px] text-gray-500 font-bold uppercase mb-0.5 block truncate">Categoría</label>
+                            <div className="relative">
+                                <select value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)} className="w-full bg-dark-900 border border-dark-700 text-white text-[10px] rounded-md p-1.5 pr-4 appearance-none focus:outline-none focus:border-padel-500 transition-colors truncate">
+                                    {CATEGORIES.map(cat => (
+                                        <option key={cat} value={cat}>{cat}</option>
+                                    ))}
+                                </select>
+                                <ChevronDown size={12} className="absolute right-1 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="text-[9px] text-gray-500 font-bold uppercase mb-0.5 block truncate">Edad</label>
+                            <div className="relative">
+                                <select value={selectedAge} onChange={(e) => setSelectedAge(e.target.value)} className="w-full bg-dark-900 border border-dark-700 text-white text-[10px] rounded-md p-1.5 pr-4 appearance-none focus:outline-none focus:border-padel-500 transition-colors truncate">
+                                    {AGES.map(age => (
+                                        <option key={age} value={age}>{age}</option>
+                                    ))}
+                                </select>
+                                <ChevronDown size={12} className="absolute right-1 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="bg-dark-800 rounded-2xl border border-dark-700 overflow-hidden">
+                    <div className="p-4 border-b border-dark-700 bg-dark-900/50">
+                        <h3 className="text-white font-bold text-lg flex items-center gap-2">
+                            <Trophy size={18} className="text-amber-400" />
+                            Top 10 Nacional
+                        </h3>
+                        <p className="text-xs text-gray-400 mt-1">
+                            {selectedCity !== 'Todas' ? selectedCity : 'Uruguay'} • {selectedCategory !== 'Todas' ? `Cat. ${selectedCategory}` : 'Todas las categorías'}
+                        </p>
+                    </div>
+
+                    <div className="w-full overflow-hidden">
+                        <table className="w-full text-left border-collapse table-fixed">
+                            <thead>
+                                <tr className="bg-dark-900/80 border-b border-dark-700 text-[9px] text-gray-500 uppercase tracking-tighter">
+                                    <th className="py-2 px-1 font-bold text-center w-6">#</th>
+                                    <th className="py-2 px-1 font-bold w-auto">Jugador</th>
+                                    <th className="py-2 px-1 font-bold text-center w-12">Ciudad</th>
+                                    <th className="py-2 px-1 font-bold text-center w-8">PJ</th>
+                                    <th className="py-2 px-1 font-bold text-center w-8">Cat</th>
+                                    <th className="py-2 px-1 font-bold text-right w-8">Rat</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-dark-700">
+                                {topPlayers.map((player) => (
+                                    <tr key={player.rank} className="hover:bg-dark-700/50 transition-colors">
+                                        <td className={`py-2 px-1 text-center font-black text-[10px] ${
+                                            player.rank === 1 ? 'text-amber-400' :
+                                            player.rank === 2 ? 'text-gray-300' :
+                                            player.rank === 3 ? 'text-amber-700' : 'text-gray-500'
+                                        }`}>
+                                            {player.rank}
+                                        </td>
+                                        <td className="py-2 px-1 truncate">
+                                            <div className="flex items-center gap-1.5">
+                                                <img src={player.avatar} alt={player.name} className="w-5 h-5 rounded-full border border-dark-600 shrink-0" />
+                                                <span className="text-white font-bold text-[10px] truncate">{player.name}</span>
+                                            </div>
+                                        </td>
+                                        <td className="py-2 px-1 text-center">
+                                            <div className="flex items-center justify-center gap-1 bg-dark-900 px-1 py-0.5 rounded border border-dark-700 w-max mx-auto">
+                                                <span className="text-[8px] text-gray-300 font-medium">{player.cityBadge}</span>
+                                            </div>
+                                        </td>
+                                        <td className="py-2 px-1 text-center text-white text-[10px]">{player.ratedMatchesCount}</td>
+                                        <td className="py-2 px-1 text-center text-white text-[10px]">{player.categoryLabel}</td>
+                                        <td className="py-2 px-1 text-right text-padel-400 font-black text-[10px]">{player.rating}</td>
+                                    </tr>
+                                ))}
+                                {topPlayers.length === 0 && (
+                                    <tr>
+                                        <td colSpan={6} className="py-6 text-center text-sm text-gray-500">
+                                            No hay jugadores para los filtros seleccionados.
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div className="w-full border-t-2 border-padel-500 bg-padel-900/20 relative">
+                        <div className="absolute inset-0 bg-gradient-to-r from-padel-500/10 to-transparent pointer-events-none"></div>
+                        <table className="w-full text-left border-collapse table-fixed relative z-10">
+                            <tbody>
+                                <tr>
+                                    <td className="py-2 px-1 text-center font-black text-[10px] text-padel-400 w-6">
+                                        {rankingPosition ?? '-'}
+                                    </td>
+                                    <td className="py-2 px-1 w-auto truncate">
+                                        <div className="flex items-center gap-1.5">
+                                            <img src={currentUser.avatar} alt={currentUser.name} className="w-5 h-5 rounded-full border-2 border-padel-500 shrink-0" />
+                                            <span className="text-white font-bold text-[10px] truncate">Tú</span>
+                                        </div>
+                                    </td>
+                                    <td className="py-2 px-1 text-center w-12">
+                                        <div className="flex items-center justify-center gap-1 bg-dark-900 px-1 py-0.5 rounded border border-dark-700 w-max mx-auto">
+                                            <span className="text-[8px] text-gray-300 font-medium">{userPosition?.cityBadge ?? '-'}</span>
+                                        </div>
+                                    </td>
+                                    <td className="py-2 px-1 text-center text-white text-[10px] w-8">{userPosition?.ratedMatchesCount ?? currentUser.matchesPlayed}</td>
+                                    <td className="py-2 px-1 text-center text-white text-[10px] w-8">{currentUser.categoryNumber ? `${currentUser.categoryNumber}ª` : '-'}</td>
+                                    <td className="py-2 px-1 text-right text-padel-400 font-black text-[10px] w-8">{currentUser.level.toFixed(2)}</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -3318,55 +3624,43 @@ const TopRivalsView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     );
 };
 
-const PlayView: React.FC<ViewProps> = ({ currentUser, navigateTo, onOpenCoaches, agenda = [], matches = [], tournaments = [], onJoin, onRequest, onSubmitResult, onConfirmResult, onUserClick, onLaunchTournament, onOpenTournamentStatus, onAddTeamsToTournament, onAddResult, onArchiveTournament }) => {
+const PlayView: React.FC<ViewProps> = ({ currentUser, rankingPosition, myMatchesByScope, navigateTo, onOpenCoaches, agenda = [], matches = [], tournaments = [], onJoin, onRequest, onLeaveMatch, onCancelMatch, onSubmitResult, onConfirmResult, onRejectResult, onUserClick, onLaunchTournament, onOpenTournamentStatus, onAddTeamsToTournament, onAddResult, onArchiveTournament }) => {
     // ... (No changes here, keeping existing code)
     const userCategory = getCategory(currentUser.level);
-    const userRanking = 154; // Mock ranking position in Uruguay
+    const userRanking = rankingPosition;
 
-    // Filter matches where current user is a participant or has a pending request
-    const myMatches = matches
-        .filter(m => 
-            (m.players.some(p => p?.id === currentUser.id) || 
-            m.pendingPlayerIds?.includes(currentUser.id) ||
-            m.approvedGuestIds?.includes(currentUser.id)) &&
-            !m.isAmericanoDinamico
-        )
-        .sort((a, b) => {
-            const dateA = new Date(a.date);
-            const dateB = new Date(b.date);
-            const [hA, mA] = a.time.split(':').map(Number);
-            const [hB, mB] = b.time.split(':').map(Number);
-            dateA.setHours(hA, mA, 0, 0);
-            dateB.setHours(hB, mB, 0, 0);
-            return dateA.getTime() - dateB.getTime();
+    const mergeUniqueMatches = (primaryMatches: Match[], secondaryMatches: Match[]): Match[] => {
+        const byId = new Map<string, Match>();
+        [...primaryMatches, ...secondaryMatches].forEach(match => {
+            byId.set(match.id, match);
         });
+        return sortMatchesByScheduledDateAsc(Array.from(byId.values()));
+    };
+
+    const backendTournamentUpcomingMatches = matches.filter(match =>
+        match.matchSource === 'backend-tournament'
+        && isTournamentParticipant(match, currentUser)
+        && match.status !== 'completed'
+        && match.status !== 'cancelled'
+        && !match.isAmericanoDinamico
+    );
+
+    const myMatches = mergeUniqueMatches(
+        myMatchesByScope?.upcoming ?? [],
+        backendTournamentUpcomingMatches,
+    );
     
-    // Check for matches requiring result action
-    const pendingResultMatches = matches
-        .filter(m => {
-            if (m.status !== 'awaiting_result' && m.status !== 'awaiting_validation') return false;
-            if (m.isAmericanoDinamico) return false; // Hide from highlights
-            
-            const isParticipant = m.players.some(p => p?.id === currentUser.id);
-            if (isParticipant) return true;
+    const backendTournamentPendingResultMatches = matches.filter(match => {
+        if (match.matchSource !== 'backend-tournament') return false;
+        if (match.status !== 'awaiting_result' && match.status !== 'awaiting_validation') return false;
+        if (match.isAmericanoDinamico) return false;
+        return isTournamentParticipant(match, currentUser);
+    });
 
-            if (m.isTournamentMatch && m.tournamentId) {
-                const tournament = tournaments.find(t => t.id === m.tournamentId);
-                if (tournament && tournament.creatorId === currentUser.id) {
-                    return true;
-                }
-            }
-            return false;
-        })
-        .sort((a, b) => {
-            const dateA = new Date(a.date);
-            const dateB = new Date(b.date);
-            const [hA, mA] = a.time.split(':').map(Number);
-            const [hB, mB] = b.time.split(':').map(Number);
-            dateA.setHours(hA, mA, 0, 0);
-            dateB.setHours(hB, mB, 0, 0);
-            return dateA.getTime() - dateB.getTime();
-        });
+    const pendingResultMatches = mergeUniqueMatches(
+        myMatchesByScope?.pendingResult ?? [],
+        backendTournamentPendingResultMatches,
+    );
     
     // Filter agenda items that are NOT matches (classes, tournaments)
     const otherEvents = agenda.filter(item => item.type !== 'match');
@@ -3445,7 +3739,7 @@ const PlayView: React.FC<ViewProps> = ({ currentUser, navigateTo, onOpenCoaches,
                     <p className="text-gray-400 text-sm mt-2 leading-relaxed">
                         Tu rating actual es <span className="text-padel-400 font-bold">{currentUser.level.toFixed(2)}</span>, 
                         tu categoría es <span className="text-white font-bold">{userCategory}</span>
-                        {' '}y estás <span className="text-amber-400 font-bold">#{userRanking}</span> en el ranking de Uruguay.
+                        {' '}y estás <span className="text-amber-400 font-bold">{userRanking ? `#${userRanking}` : 'sin ranking'}</span> en el ranking de Uruguay.
                     </p>
                 </div>
                 <div className="bg-dark-800 p-2 rounded-full border border-dark-700 relative mt-1 shrink-0">
@@ -3506,9 +3800,11 @@ const PlayView: React.FC<ViewProps> = ({ currentUser, navigateTo, onOpenCoaches,
                                         <MatchCard 
                                             match={matchData} 
                                             currentUser={currentUser} 
-                                            clubName={MOCK_CLUBS.find(c => c.id === matchData.clubId)?.name || 'Unknown Club'}
+                                            clubName={matchData.clubName || MOCK_CLUBS.find(c => c.id === matchData.clubId)?.name || 'Unknown Club'}
                                             onJoin={onJoin}
                                             onRequest={onRequest}
+                                            onLeave={onLeaveMatch}
+                                            onCancel={onCancelMatch}
                                             onUserClick={onUserClick}
                                             onAddResult={canAddResult ? () => onAddResult && onAddResult(matchData) : undefined}
                                             className="mb-0 h-full shadow-lg border-dark-600"
@@ -3579,11 +3875,15 @@ const PlayView: React.FC<ViewProps> = ({ currentUser, navigateTo, onOpenCoaches,
                                 currentUser={currentUser}
                                 onSubmit={onSubmitResult}
                                 onConfirm={onConfirmResult}
+                                onReject={onRejectResult}
                             />
                         </div>
                     ))}
                     
-                    {tournaments.filter(t => !t.isArchived).map(tournament => (
+                    {tournaments.filter(t => !t.isArchived).map(tournament => {
+                        const isTournamentCreator = tournament.creatorId === currentUser.id;
+
+                        return (
                         <div key={tournament.id} className="min-w-[85vw] sm:min-w-[340px] snap-center bg-dark-800 border border-dark-700 rounded-2xl shadow-lg relative overflow-hidden flex flex-col">
                             {/* Header */}
                             <div className="bg-dark-900/40 px-3 py-2 flex justify-between items-center border-b border-dark-700/30">
@@ -3629,7 +3929,7 @@ const PlayView: React.FC<ViewProps> = ({ currentUser, navigateTo, onOpenCoaches,
                                     </div>
                                     <div className="flex flex-col text-right">
                                         <span className="text-gray-500 text-[10px] uppercase font-bold">Etapa Actual</span>
-                                        {tournament.status === 'Empezar torneo' ? (
+                                        {tournament.status === 'Empezar torneo' && isTournamentCreator ? (
                                             <button 
                                                 onClick={() => onLaunchTournament && onLaunchTournament(tournament)}
                                                 className="bg-amber-500 text-dark-900 text-xs font-bold px-3 py-1.5 rounded-lg mt-1 hover:bg-amber-400 transition-colors"
@@ -3643,7 +3943,7 @@ const PlayView: React.FC<ViewProps> = ({ currentUser, navigateTo, onOpenCoaches,
                                             >
                                                 Estatus
                                             </button>
-                                        ) : tournament.status === 'Inscripciones Abiertas' ? (
+                                        ) : tournament.status === 'Inscripciones Abiertas' && isTournamentCreator ? (
                                             <div className="flex flex-col gap-1 mt-1">
                                                 <button 
                                                     onClick={() => onAddTeamsToTournament && onAddTeamsToTournament(tournament)}
@@ -3663,7 +3963,7 @@ const PlayView: React.FC<ViewProps> = ({ currentUser, navigateTo, onOpenCoaches,
                                         )}
                                     </div>
                                 </div>
-                                {tournament.creatorId === currentUser.id && (
+                                {isTournamentCreator && (
                                     <button
                                         onClick={() => onArchiveTournament && onArchiveTournament(tournament.id)}
                                         className="mt-3 w-full bg-dark-700/50 text-gray-400 text-xs font-bold px-3 py-2 rounded-lg hover:bg-dark-600 transition-colors flex items-center justify-center gap-2 border border-dark-600"
@@ -3674,7 +3974,8 @@ const PlayView: React.FC<ViewProps> = ({ currentUser, navigateTo, onOpenCoaches,
                                 )}
                             </div>
                         </div>
-                    ))}
+                        );
+                    })}
 
                     {pendingResultMatches.length === 0 && tournaments.filter(t => !t.isArchived).length === 0 && (
                         <div className="min-w-[85vw] sm:min-w-[340px] snap-center relative rounded-2xl overflow-hidden border border-dark-700 group shadow-2xl">
@@ -3731,7 +4032,7 @@ const PlayView: React.FC<ViewProps> = ({ currentUser, navigateTo, onOpenCoaches,
     );
 };
 
-const MatchesView: React.FC<ViewProps> = ({ currentUser, matches = [], onJoin, onRequest, onUserClick }) => {
+const MatchesView: React.FC<ViewProps> = ({ currentUser, matches = [], onJoin, onRequest, onLeaveMatch, onCancelMatch, onUserClick }) => {
     // ... (No changes here, keeping existing code)
     // 1. Basic Availability Filter (Not full, User not in it)
     const availableMatches = matches.filter(m => 
@@ -3797,9 +4098,11 @@ const MatchesView: React.FC<ViewProps> = ({ currentUser, matches = [], onJoin, o
                             key={match.id} 
                             match={match} 
                             currentUser={currentUser} 
-                            clubName={MOCK_CLUBS.find(c => c.id === match.clubId)?.name || 'Unknown Club'}
+                            clubName={match.clubName || MOCK_CLUBS.find(c => c.id === match.clubId)?.name || 'Unknown Club'}
                             onJoin={onJoin}
                             onRequest={onRequest}
+                            onLeave={onLeaveMatch}
+                            onCancel={onCancelMatch}
                             onUserClick={onUserClick}
                         />
                     ))
@@ -3826,9 +4129,11 @@ const MatchesView: React.FC<ViewProps> = ({ currentUser, matches = [], onJoin, o
                             key={match.id} 
                             match={match} 
                             currentUser={currentUser} 
-                            clubName={MOCK_CLUBS.find(c => c.id === match.clubId)?.name || 'Unknown Club'}
+                            clubName={match.clubName || MOCK_CLUBS.find(c => c.id === match.clubId)?.name || 'Unknown Club'}
                             onJoin={onJoin}
                             onRequest={onRequest}
+                            onLeave={onLeaveMatch}
+                            onCancel={onCancelMatch}
                             onUserClick={onUserClick}
                             className="opacity-90" // Slight fade to differentiate
                         />
@@ -3843,7 +4148,14 @@ const MatchesView: React.FC<ViewProps> = ({ currentUser, matches = [], onJoin, o
     );
 };
 
-const CompetitionView: React.FC<ViewProps> = ({ currentUser, onCreateTournament }) => {
+const CompetitionView: React.FC<ViewProps> = ({
+    currentUser,
+    tournaments = [],
+    onCreateTournament,
+    onOpenTournamentStatus,
+    onJoinTournament,
+    onLeaveTournament,
+}) => {
     // ... (No changes here, keeping existing code)
     const TOURNAMENTS = [
         {
@@ -3880,6 +4192,125 @@ const CompetitionView: React.FC<ViewProps> = ({ currentUser, onCreateTournament 
             bg: 'from-red-900/20 to-dark-900'
         }
     ];
+    const hasLegacyTournamentMocks = TOURNAMENTS.length > 0;
+
+    const visibleTournaments = [...tournaments]
+        .filter(tournament => !tournament.isArchived)
+        .sort((left, right) => {
+            const leftPriority = left.backendStatus === 'IN_PROGRESS' ? 0 : left.backendStatus === 'OPEN' ? 1 : 2;
+            const rightPriority = right.backendStatus === 'IN_PROGRESS' ? 0 : right.backendStatus === 'OPEN' ? 1 : 2;
+
+            if (leftPriority !== rightPriority) {
+                return leftPriority - rightPriority;
+            }
+
+            const leftDate = left.startDate || left.date || '';
+            const rightDate = right.startDate || right.date || '';
+            return new Date(leftDate).getTime() - new Date(rightDate).getTime();
+        })
+        .map(tournament => {
+            const theme = getTournamentTheme(tournament);
+            const currentTeams = Array.isArray(tournament.teams) ? tournament.teams.length : 0;
+            const expectedTeams = tournament.numTeams || currentTeams;
+
+            return {
+                ...tournament,
+                title: tournament.title || tournament.name,
+                date: tournament.date || tournament.dateString || 'Proximamente',
+                location: tournament.location || tournament.clubName || 'Sede por definir',
+                prizes: tournament.prizes || (tournament.isCompetitive === false ? 'Liga Recreativa' : 'Por los puntos'),
+                participants: tournament.participants || (expectedTeams > 0
+                    ? `${currentTeams}/${expectedTeams} equipos`
+                    : `${currentTeams} equipos`),
+                statusColor: tournament.statusColor || theme.statusColor,
+                bg: tournament.bg || theme.bg,
+            };
+        });
+
+    function getTournamentTheme(tournament: any) {
+        switch (tournament.backendStatus) {
+            case 'OPEN':
+                return {
+                    statusColor: 'bg-amber-500 text-dark-900',
+                    bg: 'from-dark-800 to-dark-900'
+                };
+            case 'IN_PROGRESS':
+                return {
+                    statusColor: 'bg-padel-500 text-dark-900',
+                    bg: 'from-blue-900/40 to-dark-900'
+                };
+            case 'COMPLETED':
+                return {
+                    statusColor: 'bg-blue-500 text-white',
+                    bg: 'from-dark-700 to-dark-900'
+                };
+            case 'CANCELLED':
+                return {
+                    statusColor: 'bg-red-500 text-white',
+                    bg: 'from-red-900/20 to-dark-900'
+                };
+            default:
+                return {
+                    statusColor: 'bg-purple-500 text-white',
+                    bg: 'from-dark-800 to-dark-900'
+                };
+        }
+    }
+
+    const isRegistered = (tournament: any) =>
+        Array.isArray(tournament.teams)
+        && tournament.teams.some((team: any) =>
+            Array.isArray(team.players)
+            && team.players.some((player: User | null) => player?.id === currentUser.id)
+        );
+
+    const isCreator = (tournament: any) => tournament.creatorId === currentUser.id;
+
+    const canJoinTournament = (tournament: any) =>
+        Boolean(
+            tournament.isBackendTournament
+            && tournament.format === 'league'
+            && !isCreator(tournament)
+            && !isRegistered(tournament)
+            && tournament.backendStatus === 'OPEN'
+            && tournament.openEnrollment
+        );
+
+    const canLeaveTournament = (tournament: any) =>
+        Boolean(
+            tournament.isBackendTournament
+            && tournament.format === 'league'
+            && !isCreator(tournament)
+            && isRegistered(tournament)
+            && tournament.backendStatus === 'OPEN'
+        );
+
+    const canOpenTournamentDetails = (tournament: any) =>
+        !tournament.isBackendTournament || isCreator(tournament) || isRegistered(tournament);
+
+    const getPrimaryActionLabel = (tournament: any) => {
+        if (canJoinTournament(tournament)) {
+            return 'Unirme';
+        }
+        if (canLeaveTournament(tournament)) {
+            return 'Salir';
+        }
+        return 'Ver Detalles';
+    };
+
+    const handlePrimaryAction = (tournament: any) => {
+        if (canJoinTournament(tournament)) {
+            onJoinTournament?.(tournament);
+            return;
+        }
+        if (canLeaveTournament(tournament)) {
+            onLeaveTournament?.(tournament);
+            return;
+        }
+        if (canOpenTournamentDetails(tournament)) {
+            onOpenTournamentStatus?.(tournament);
+        }
+    };
 
     return (
         <div className="pb-24 pt-4 px-4">
@@ -3946,9 +4377,29 @@ const CompetitionView: React.FC<ViewProps> = ({ currentUser, onCreateTournament 
             </div>
 
             <div className="space-y-4">
-                {TOURNAMENTS.map(tournament => (
-                    <div key={tournament.id} className={`bg-gradient-to-r ${tournament.bg} border border-dark-700 rounded-2xl p-4 relative overflow-hidden`}>
-                        <div className={`absolute top-0 right-0 px-3 py-1 ${tournament.statusColor} font-bold text-[10px] rounded-bl-xl shadow-lg`}>
+                {visibleTournaments.length === 0 && (
+                    <div className="bg-dark-800 border border-dark-700 rounded-2xl p-4">
+                        <h3 className="text-white font-bold text-base mb-1">Aun no hay ligas activas</h3>
+                        <p className="text-gray-400 text-sm">
+                            {hasLegacyTournamentMocks
+                                ? 'La vista ya no usa el listado estatico. Cuando haya ligas reales, apareceran aqui desde el backend.'
+                                : 'Cuando haya torneos de liga disponibles, apareceran aqui con su estado real desde el backend.'}
+                        </p>
+                    </div>
+                )}
+
+                {visibleTournaments.map(tournament => {
+                    const theme = getTournamentTheme(tournament);
+                    const currentTeams = Array.isArray(tournament.teams) ? tournament.teams.length : 0;
+                    const expectedTeams = tournament.numTeams || currentTeams;
+                    const competitionLabel = tournament.isCompetitive === false ? 'Liga Recreativa' : 'Por los puntos';
+                    const participantsLabel = expectedTeams > 0
+                        ? `${currentTeams}/${expectedTeams} equipos`
+                        : `${currentTeams} equipos`;
+
+                    return (
+                    <div key={tournament.id} className={`bg-gradient-to-r ${theme.bg} border border-dark-700 rounded-2xl p-4 relative overflow-hidden`}>
+                        <div className={`absolute top-0 right-0 px-3 py-1 ${theme.statusColor} font-bold text-[10px] rounded-bl-xl shadow-lg`}>
                             {tournament.status}
                         </div>
                         <h3 className="text-white font-bold text-lg mb-1">{tournament.title}</h3>
@@ -3959,15 +4410,24 @@ const CompetitionView: React.FC<ViewProps> = ({ currentUser, onCreateTournament 
                              <span className="flex items-center gap-1"><Trophy size={14} className="text-amber-400" /> {tournament.prizes}</span>
                              <span className="flex items-center gap-1"><Users size={14} /> {tournament.participants}</span>
                         </div>
-                        <Button variant="secondary" size="sm" fullWidth>Ver Detalles</Button>
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            fullWidth
+                            onClick={() => handlePrimaryAction(tournament)}
+                            disabled={!canJoinTournament(tournament) && !canLeaveTournament(tournament) && !canOpenTournamentDetails(tournament)}
+                        >
+                            {getPrimaryActionLabel(tournament)}
+                        </Button>
                     </div>
-                ))}
+                    );
+                })}
             </div>
         </div>
     )
 }
 
-const ClubsView: React.FC<ViewProps> = ({ currentUser, onBook }) => {
+const ClubsView: React.FC<ViewProps> = ({ currentUser, clubs = MOCK_CLUBS, onBook }) => {
     // ... (No changes here, keeping existing code)
     const [selectedClub, setSelectedClub] = useState<Club | null>(null);
     const [bookingStep, setBookingStep] = useState<'time' | 'config'>('time');
@@ -4025,6 +4485,8 @@ const ClubsView: React.FC<ViewProps> = ({ currentUser, onBook }) => {
         const newMatch: Match = {
             id: `m-${Date.now()}`,
             clubId: selectedClub.id,
+            clubName: selectedClub.name,
+            backendClubId: getBackendClubId(selectedClub.id),
             courtName: `Cancha ${selectedCourt}`,
             date: new Date().toISOString(),
             time: selectedTime,
@@ -4311,7 +4773,16 @@ const ClubsView: React.FC<ViewProps> = ({ currentUser, onBook }) => {
             </header>
 
             <div className="space-y-4">
-                {MOCK_CLUBS.map(club => (
+                {clubs.length === 0 && (
+                    <div className="bg-dark-800 rounded-2xl border border-dark-700 p-4">
+                        <h3 className="text-white font-bold text-base mb-1">No hay clubes disponibles</h3>
+                        <p className="text-gray-400 text-sm">
+                            Cuando el backend tenga clubes cargados, apareceran aqui para reservar.
+                        </p>
+                    </div>
+                )}
+
+                {clubs.map(club => (
                     <div key={club.id} className="bg-dark-800 rounded-2xl overflow-hidden border border-dark-700 group relative">
                          {/* Favorite Indicator for Top Padel */}
                         {club.id === 'c1' && (
@@ -4350,62 +4821,65 @@ const ClubsView: React.FC<ViewProps> = ({ currentUser, onBook }) => {
     )
 }
 
-const ProfileView: React.FC<ViewProps> = ({ currentUser, onOpenClubRankings, onOpenTopPartners, onOpenTopRivals, onPremiumFeatureAttempt, onUserClick, onOpenNationalRanking }) => {
+const ProfileView: React.FC<ViewProps> = ({ currentUser, rankingPosition, ratingHistory = [], matches = [], onOpenClubRankings, onOpenTopPartners, onOpenTopRivals, onPremiumFeatureAttempt, onUserClick, onOpenNationalRanking }) => {
     // State for Filter
     const [timeRange, setTimeRange] = useState<'LAST_10' | '1M' | '3M' | '6M' | '1Y' | 'ALL'>('LAST_10');
 
-    const hasHistory = currentUser.matchesPlayed > 0;
+    const hasHistory = ratingHistory.length > 0;
 
     // Filter Logic
     const getFilteredData = () => {
         if (!hasHistory) return [];
         const now = new Date();
-        const data = [...MATCH_ELO_HISTORY];
+        const data = [...ratingHistory];
         
         switch (timeRange) {
             case 'LAST_10':
-                return data.slice(-10);
+                return data.slice(0, 10).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
             case '1M':
                 return data.filter(d => {
                     const date = new Date(d.date);
                     const diffTime = Math.abs(now.getTime() - date.getTime());
                     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
                     return diffDays <= 30;
-                });
+                }).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
             case '3M':
                  return data.filter(d => {
                     const date = new Date(d.date);
                     const diffTime = Math.abs(now.getTime() - date.getTime());
                     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
                     return diffDays <= 90;
-                });
+                }).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
             case '6M':
                  return data.filter(d => {
                     const date = new Date(d.date);
                     const diffTime = Math.abs(now.getTime() - date.getTime());
                     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
                     return diffDays <= 180;
-                });
+                }).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
             case '1Y':
                  return data.filter(d => {
                     const date = new Date(d.date);
                     const diffTime = Math.abs(now.getTime() - date.getTime());
                     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
                     return diffDays <= 365;
-                });
+                }).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
             case 'ALL':
-                return data;
+                return data.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
             default:
-                return data.slice(-10);
+                return data.slice(0, 10).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
         }
     };
 
     const chartData = getFilteredData();
 
     // Determine motivational message based on recent history (last 5 of filtered or absolute last 5)
-    const recentMatches = hasHistory ? MATCH_ELO_HISTORY.slice(-5) : [];
+    const recentMatches = hasHistory ? ratingHistory.slice(0, 5) : [];
     const wins = recentMatches.filter(m => m.result === 'W').length;
-    const lastResult = recentMatches[recentMatches.length - 1]?.result;
+    const lastResult = recentMatches[0]?.result;
+    const winRate = hasHistory
+        ? Math.round((ratingHistory.filter(entry => entry.result === 'W').length / ratingHistory.length) * 100)
+        : 0;
 
     let insightTitle = "Análisis de Rendimiento";
     let motivationalMessage = hasHistory 
@@ -4423,8 +4897,8 @@ const ProfileView: React.FC<ViewProps> = ({ currentUser, onOpenClubRankings, onO
     }
 
     // Calculate dynamic domain for Y-Axis based on filtered data
-    const minRating = Math.min(...chartData.map(d => d.total));
-    const maxRating = Math.max(...chartData.map(d => d.total));
+    const minRating = chartData.length > 0 ? Math.min(...chartData.map(d => d.total)) : currentUser.level;
+    const maxRating = chartData.length > 0 ? Math.max(...chartData.map(d => d.total)) : currentUser.level;
     const yDomain = [Math.max(1, minRating - 0.2), Math.min(7, maxRating + 0.2)];
 
     // Custom Label for Points
@@ -4577,11 +5051,11 @@ const ProfileView: React.FC<ViewProps> = ({ currentUser, onOpenClubRankings, onO
                 </div>
                 <div className="bg-dark-800 p-3 rounded-xl border border-dark-700 text-center">
                     <p className="text-gray-400 text-xs uppercase">Win Rate</p>
-                    <p className="text-padel-400 font-bold text-xl">{hasHistory ? '58%' : '0%'}</p>
+                    <p className="text-padel-400 font-bold text-xl">{hasHistory ? `${winRate}%` : '0%'}</p>
                 </div>
                 <div onClick={onOpenNationalRanking} className="bg-dark-800 p-3 rounded-xl border border-dark-700 text-center cursor-pointer hover:bg-dark-700 transition-colors">
                     <p className="text-gray-400 text-xs uppercase">Ranking</p>
-                    <p className="text-white font-bold text-xl">#42</p>
+                    <p className="text-white font-bold text-xl">{rankingPosition ? `#${rankingPosition}` : '-'}</p>
                 </div>
             </div>
 
@@ -4712,7 +5186,17 @@ const ProfileView: React.FC<ViewProps> = ({ currentUser, onOpenClubRankings, onO
                 <div className="mb-6">
                     <h3 className="text-white font-bold mb-3">Últimos Resultados</h3>
                     <div className="flex gap-4 overflow-x-auto pb-4 -mx-4 px-4 scroll-smooth snap-x scrollbar-hide">
-                        {recentMatches.slice().reverse().map((hist, index) => {
+                        {recentMatches.slice().reverse().map((hist) => (
+                            <div key={hist.id} className="min-w-[85vw] sm:min-w-[340px] snap-center">
+                                <MatchCard
+                                    match={hist.matchCard}
+                                    currentUser={currentUser}
+                                    clubName={hist.matchCard.clubName || 'Partido puntuado'}
+                                    onUserClick={onUserClick}
+                                />
+                            </div>
+                        ))}
+                        {false && recentMatches.slice().reverse().map((hist, index) => {
                             const isWin = hist.result === 'W';
                             
                             // Create mock users for the match
@@ -4798,7 +5282,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<User>(MOCK_USER);
   const [tempName, setTempName] = useState('');
   const [currentTab, setCurrentTab] = useState('play');
-  const [matches, setMatches] = useState<Match[]>(INITIAL_MATCHES);
+  const [matches, setMatches] = useState<Match[]>([]);
   const [agenda, setAgenda] = useState<AgendaItem[]>(INITIAL_AGENDA);
   const [notification, setNotification] = useState<string | null>(null);
   const [showClubRankings, setShowClubRankings] = useState(false);
@@ -4813,61 +5297,501 @@ export default function App() {
   const [tournamentToEdit, setTournamentToEdit] = useState<any | null>(null);
   const [selectedTournamentStatus, setSelectedTournamentStatus] = useState<any | null>(null);
   const [selectedMatchForResult, setSelectedMatchForResult] = useState<Match | null>(null);
+  const [clubCatalog, setClubCatalog] = useState<Club[] | null>(null);
   const [tournaments, setTournaments] = useState<any[]>([]);
+  const [leagueTournamentCatalog, setLeagueTournamentCatalog] = useState<any[]>([]);
   const [selectedPublicUser, setSelectedPublicUser] = useState<User | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [sessionChecked, setSessionChecked] = useState(false);
+  const [authEmail, setAuthEmail] = useState('demo@sentimospadel.uy');
+  const [authPassword, setAuthPassword] = useState('password');
+  const [authLoading, setAuthLoading] = useState(false);
+  const [rankingEntries, setRankingEntries] = useState<Awaited<ReturnType<typeof backendApi.getRankings>>>([]);
+  const [myRatingHistory, setMyRatingHistory] = useState<Awaited<ReturnType<typeof backendApi.getMyRatingHistory>>>([]);
+  const [myMatchesByScope, setMyMatchesByScope] = useState<ScopedMyMatches>(EMPTY_SCOPED_MY_MATCHES);
+  const [tournamentSelectablePlayers, setTournamentSelectablePlayers] = useState<User[]>([]);
+  const [tournamentClubOptions, setTournamentClubOptions] = useState<Club[]>(MOCK_CLUBS);
   const [postMatchResult, setPostMatchResult] = useState<{ oldRating: number, newRating: number, delta: number } | null>(null);
 
-  // AUTH SCREEN COMPONENT (Nested in App to share state if needed, but here isolated for simplicity)
-  // Re-defined inside App to fix "AuthScreen is not defined" error from previous context switch
-  // But actually defined above.
-  
+  const hasStoredToken = () => {
+    if (typeof window === 'undefined') {
+      return false;
+    }
+
+    return Boolean(window.localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY));
+  };
+
+  const showAuthError = (error: unknown, fallbackMessage: string) => {
+    console.error(error);
+
+    if (error instanceof BackendApiError) {
+      alert(error.message);
+      return;
+    }
+
+    alert(fallbackMessage);
+  };
+
+  const showMatchError = (error: unknown, fallbackMessage: string) => {
+    console.error(error);
+
+    if (error instanceof BackendApiError) {
+      setNotification(error.message);
+      setTimeout(() => setNotification(null), 4000);
+      return;
+    }
+
+    setNotification(fallbackMessage);
+    setTimeout(() => setNotification(null), 4000);
+  };
+
+  const replaceBackendManagedMatches = (nextBackendMatches: Match[]) => {
+    setMatches(prevMatches => {
+      const localMatches = prevMatches.filter(match => !isBackendManagedMatch(match));
+      return [...nextBackendMatches, ...localMatches];
+    });
+  };
+
+  const replaceBackendTournamentMatches = (nextTournamentMatches: Match[]) => {
+    setMatches(prevMatches => {
+      const nonTournamentMatches = prevMatches.filter(match => match.matchSource !== 'backend-tournament');
+      return [...nextTournamentMatches, ...nonTournamentMatches];
+    });
+  };
+
+  const refreshBackendMatches = async (userOverride?: User) => {
+    if (!hasStoredToken()) {
+      setMyMatchesByScope(EMPTY_SCOPED_MY_MATCHES);
+      return;
+    }
+
+    const user = userOverride ?? currentUser;
+    const clubsRequest = backendApi.getClubs().catch(
+      () => [] as Awaited<ReturnType<typeof backendApi.getClubs>>,
+    );
+    const myMatchesRequest = user.backendPlayerProfileId
+      ? backendApi.getMyMatches()
+      : Promise.resolve([] as Awaited<ReturnType<typeof backendApi.getMyMatches>>);
+    const scopeRequests = user.backendPlayerProfileId
+      ? Promise.all([
+          backendApi.getMyMatches('upcoming').catch(() => [] as Awaited<ReturnType<typeof backendApi.getMyMatches>>),
+          backendApi.getMyMatches('completed').catch(() => [] as Awaited<ReturnType<typeof backendApi.getMyMatches>>),
+          backendApi.getMyMatches('cancelled').catch(() => [] as Awaited<ReturnType<typeof backendApi.getMyMatches>>),
+          backendApi.getMyMatches('pending_result').catch(() => [] as Awaited<ReturnType<typeof backendApi.getMyMatches>>),
+        ] as const)
+      : Promise.resolve([
+          [],
+          [],
+          [],
+          [],
+        ] as [
+          Awaited<ReturnType<typeof backendApi.getMyMatches>>,
+          Awaited<ReturnType<typeof backendApi.getMyMatches>>,
+          Awaited<ReturnType<typeof backendApi.getMyMatches>>,
+          Awaited<ReturnType<typeof backendApi.getMyMatches>>,
+        ]);
+    const [clubs, publicMatches, myMatches, scopedMatches] = await Promise.all([
+      clubsRequest,
+      backendApi.listMatches(),
+      myMatchesRequest,
+      scopeRequests,
+    ]);
+
+    setClubCatalog(buildTournamentClubOptions(clubs));
+    const clubLookup = buildClubLookup(clubs);
+    const nextMatches = mergeBackendMatches(myMatches, publicMatches, user, clubLookup);
+    const [upcomingMatches, completedMatches, cancelledMatches, pendingResultMatches] = scopedMatches;
+    setMyMatchesByScope({
+      upcoming: mapScopedPlayerMatches(upcomingMatches, publicMatches, user, clubLookup),
+      completed: mapScopedPlayerMatches(completedMatches, publicMatches, user, clubLookup),
+      cancelled: mapScopedPlayerMatches(cancelledMatches, publicMatches, user, clubLookup),
+      pendingResult: mapScopedPlayerMatches(pendingResultMatches, publicMatches, user, clubLookup),
+    });
+    replaceBackendManagedMatches(nextMatches);
+  };
+
+  const refreshBackendTournaments = async (userOverride?: User) => {
+    if (!hasStoredToken()) {
+      setClubCatalog(null);
+      setLeagueTournamentCatalog([]);
+      return;
+    }
+
+    const user = userOverride ?? currentUser;
+    const [clubs, playerProfiles, tournamentResponses] = await Promise.all([
+      backendApi.getClubs().catch(
+        () => [] as Awaited<ReturnType<typeof backendApi.getClubs>>,
+      ),
+      backendApi.getPlayerProfiles().catch(
+        () => [] as Awaited<ReturnType<typeof backendApi.getPlayerProfiles>>,
+      ),
+      backendApi.getTournaments().catch(
+        () => [] as Awaited<ReturnType<typeof backendApi.getTournaments>>,
+      ),
+    ]);
+
+    setClubCatalog(buildTournamentClubOptions(clubs));
+    setTournamentClubOptions(buildTournamentClubOptions(clubs));
+    setTournamentSelectablePlayers(buildTournamentSelectablePlayers(playerProfiles, user));
+
+    const clubLookup = buildClubLookup(clubs);
+    const leagueTournaments = tournamentResponses.filter(tournament => tournament.format === 'LEAGUE');
+    const isRelevantLeagueTournament = (
+      tournament: Awaited<ReturnType<typeof backendApi.getTournaments>>[number],
+    ) =>
+      tournament.createdByPlayerProfileId === user.backendPlayerProfileId
+      || tournament.entries.some(entry =>
+        entry.members.some(member => member.playerProfileId === user.backendPlayerProfileId),
+      );
+
+    const backendTournamentSnapshots = await Promise.all(
+      leagueTournaments.map(async tournament => {
+        const shouldLoadOperationalData = tournament.generatedMatchesCount > 0
+          || tournament.status === 'IN_PROGRESS'
+          || tournament.status === 'COMPLETED';
+
+        const [tournamentMatches, standings] = await Promise.all([
+          shouldLoadOperationalData
+            ? backendApi.getTournamentMatches(tournament.id).catch(
+                () => [] as Awaited<ReturnType<typeof backendApi.getTournamentMatches>>,
+              )
+            : Promise.resolve([] as Awaited<ReturnType<typeof backendApi.getTournamentMatches>>),
+          shouldLoadOperationalData
+            ? backendApi.getTournamentStandings(tournament.id).catch(() => null)
+            : Promise.resolve(null),
+        ]);
+
+        const frontendTournamentMatches = toFrontendTournamentMatches(
+          tournament,
+          tournamentMatches,
+          user,
+          clubLookup,
+        );
+
+        return {
+          isRelevant: isRelevantLeagueTournament(tournament),
+          tournament: toFrontendTournament(
+            tournament,
+            frontendTournamentMatches,
+            standings,
+            user,
+            clubLookup,
+          ),
+          matches: frontendTournamentMatches,
+        };
+      }),
+    );
+
+    setLeagueTournamentCatalog(
+      backendTournamentSnapshots.map(snapshot => snapshot.tournament),
+    );
+
+    setTournaments(prevTournaments => [
+      ...backendTournamentSnapshots
+        .filter(snapshot => snapshot.isRelevant)
+        .map(snapshot => snapshot.tournament),
+      ...prevTournaments.filter(tournament => !tournament.isBackendTournament),
+    ]);
+
+    replaceBackendTournamentMatches(
+      backendTournamentSnapshots
+        .filter(snapshot => snapshot.isRelevant)
+        .flatMap(snapshot => snapshot.matches),
+    );
+  };
+
+  const refreshRankingAndHistory = async (userOverride?: User) => {
+    if (!hasStoredToken()) {
+      return;
+    }
+
+    const user = userOverride ?? currentUser;
+    const rankingsRequest = backendApi.getRankings().catch(
+      () => [] as Awaited<ReturnType<typeof backendApi.getRankings>>,
+    );
+    const historyRequest = user.backendPlayerProfileId
+      ? backendApi.getMyRatingHistory().catch(
+          () => [] as Awaited<ReturnType<typeof backendApi.getMyRatingHistory>>,
+        )
+      : Promise.resolve([] as Awaited<ReturnType<typeof backendApi.getMyRatingHistory>>);
+
+    const [nextRankings, nextHistory] = await Promise.all([rankingsRequest, historyRequest]);
+    setRankingEntries(nextRankings);
+    setMyRatingHistory(nextHistory);
+  };
+
+  const hydrateAuthenticatedUser = async (preferredName?: string | null) => {
+    const authUser = await backendApi.getCurrentUser();
+
+    let playerProfile = null;
+    try {
+      playerProfile = await backendApi.getMyPlayerProfile();
+    } catch (error) {
+      if (!isNotFoundError(error)) {
+        throw error;
+      }
+    }
+
+    let onboarding = null;
+    try {
+      onboarding = await backendApi.getInitialSurvey();
+    } catch (error) {
+      if (!isNotFoundError(error)) {
+        throw error;
+      }
+    }
+
+    const nextUser = buildFrontendUser(
+      MOCK_USER,
+      authUser,
+      playerProfile,
+      onboarding,
+      preferredName ?? readStoredDisplayName(),
+    );
+
+    setCurrentUser(nextUser);
+    setTempName(nextUser.name);
+    setAuthEmail(authUser.email);
+    setShowOnboarding(!onboarding);
+    setIsAuthenticated(Boolean(onboarding));
+
+    return { authUser, playerProfile, onboarding, nextUser };
+  };
+
+  const completeRegistration = async (data: { name: string; email: string; password: string }) => {
+    setAuthLoading(true);
+
+    try {
+      await backendApi.register({ email: data.email, password: data.password });
+      const loginResponse = await backendApi.login({ email: data.email, password: data.password });
+
+      storeAccessToken(loginResponse.accessToken);
+      storeDisplayName(data.name);
+      setTempName(data.name);
+      setAuthPassword(data.password);
+      setIsRegistering(false);
+
+      await hydrateAuthenticatedUser(data.name);
+    } catch (error) {
+      showAuthError(error, 'No se pudo crear la cuenta.');
+    } finally {
+      setAuthLoading(false);
+      setSessionChecked(true);
+    }
+  };
+
+  const handleLoginSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setAuthLoading(true);
+
+    const form = event.currentTarget as HTMLFormElement;
+    const inputs = Array.from(form.querySelectorAll('input'));
+    const email = (inputs[0] as HTMLInputElement | undefined)?.value?.trim() || '';
+    const password = (inputs[1] as HTMLInputElement | undefined)?.value || '';
+
+    try {
+      setAuthEmail(email);
+      setAuthPassword(password);
+
+      const loginResponse = await backendApi.login({ email, password });
+      storeAccessToken(loginResponse.accessToken);
+      await hydrateAuthenticatedUser();
+    } catch (error) {
+      clearAccessToken();
+      showAuthError(error, 'No se pudo iniciar sesión.');
+    } finally {
+      setAuthLoading(false);
+      setSessionChecked(true);
+    }
+  };
+
+  const handleOnboardingComplete = async (rating: number, category: string) => {
+    try {
+      await hydrateAuthenticatedUser(tempName || readStoredDisplayName());
+      await refreshRankingAndHistory();
+      setAgenda([]);
+      setIsAuthenticated(true);
+      setShowOnboarding(false);
+      setNotification(`¡Bienvenido! Tu rating inicial es ${rating.toFixed(2)} (${category})`);
+      setTimeout(() => setNotification(null), 5000);
+    } catch (error) {
+      showAuthError(error, 'No se pudo refrescar tu perfil luego del onboarding.');
+    }
+  };
+
+  const handleOnboardingCancel = () => {
+    setIsAuthenticated(true);
+    setShowOnboarding(false);
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const bootstrapSession = async () => {
+      if (!hasStoredToken()) {
+        setSessionChecked(true);
+        return;
+      }
+
+      setAuthLoading(true);
+
+      try {
+        await hydrateAuthenticatedUser();
+      } catch (error) {
+        if (!cancelled) {
+          clearAccessToken();
+          clearStoredDisplayName();
+          setIsAuthenticated(false);
+          setShowOnboarding(false);
+        }
+      } finally {
+        if (!cancelled) {
+          setAuthLoading(false);
+          setSessionChecked(true);
+        }
+      }
+    };
+
+    bootstrapSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadMatches = async () => {
+      if (!hasStoredToken() || !currentUser.backendUserId) {
+        return;
+      }
+
+      try {
+        await refreshBackendMatches(currentUser);
+      } catch (error) {
+        if (!cancelled) {
+          console.error(error);
+        }
+      }
+    };
+
+    loadMatches();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser.backendUserId, currentUser.backendPlayerProfileId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadRankingHistory = async () => {
+      if (!hasStoredToken() || !currentUser.backendUserId) {
+        return;
+      }
+
+      try {
+        await refreshRankingAndHistory(currentUser);
+      } catch (error) {
+        if (!cancelled) {
+          console.error(error);
+        }
+      }
+    };
+
+    loadRankingHistory();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser.backendUserId, currentUser.backendPlayerProfileId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadTournaments = async () => {
+      if (!hasStoredToken() || !currentUser.backendUserId) {
+        return;
+      }
+
+      try {
+        await refreshBackendTournaments(currentUser);
+      } catch (error) {
+        if (!cancelled) {
+          console.error(error);
+        }
+      }
+    };
+
+    loadTournaments();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser.backendUserId, currentUser.backendPlayerProfileId]);
+
+  const rankingRows = useMemo(() => mapRankingRows(rankingEntries), [rankingEntries]);
+  const currentUserRankingPosition = useMemo(
+    () => findRankingPosition(rankingEntries, currentUser),
+    [rankingEntries, currentUser],
+  );
+  const ratingHistoryView = useMemo(
+    () => mapRatingHistory(myRatingHistory, matches, currentUser),
+    [myRatingHistory, matches, currentUser],
+  );
+  const competitionTournaments = useMemo(
+    () => [
+      ...leagueTournamentCatalog,
+      ...tournaments.filter(tournament => !tournament.isBackendTournament),
+    ],
+    [leagueTournamentCatalog, tournaments],
+  );
+
   if (!isAuthenticated) {
+    if (!sessionChecked && !showOnboarding && !isRegistering) {
+      return (
+        <div className="min-h-screen w-full relative flex flex-col items-center justify-center p-6 overflow-hidden bg-dark-900">
+          <div className="absolute inset-0 z-0">
+            <img src="https://images.unsplash.com/photo-1554068865-24131878f8ee?q=80&w=1000&auto=format&fit=crop" className="w-full h-full object-cover object-center" alt="Padel Background" />
+            <div className="absolute inset-0 bg-dark-900/90 backdrop-blur-[2px]"></div>
+            <div className="absolute inset-0 bg-gradient-to-t from-dark-900 via-transparent to-dark-900/50"></div>
+          </div>
+          <div className="relative z-10 w-full max-w-sm text-center">
+            <div className="w-16 h-16 bg-gradient-to-br from-padel-400 to-padel-600 rounded-2xl flex items-center justify-center shadow-2xl shadow-padel-500/30 mb-4 mx-auto transform rotate-3">
+              <Trophy size={32} className="text-dark-900" strokeWidth={2.5} />
+            </div>
+            <h1 className="text-3xl font-black text-white tracking-tight mb-3">Sentimos Padel</h1>
+            <p className="text-gray-400 text-sm">Cargando sesión...</p>
+          </div>
+        </div>
+      );
+    }
+
     if (showOnboarding) {
       return (
         <OnboardingSurvey 
-          onComplete={(rating, category, categoryNumber) => {
-            const newUser: User = {
-              ...MOCK_USER, // template
-              id: `u-${Date.now()}`,
-              name: tempName || 'Nuevo Jugador',
-              level: rating,
-              categoryName: category,
-              categoryNumber: categoryNumber,
-              matchesPlayed: 0,
-              reputation: 100,
-              isPremium: false,
-              verificationStatus: (categoryNumber <= 2) ? 'pending' : 'none',
-              publicCategoryNumber: (categoryNumber <= 2) ? null : categoryNumber,
-            };
-            setCurrentUser(newUser);
-            setAgenda([]); // Clear agenda for new user
-            setIsAuthenticated(true);
-            setShowOnboarding(false);
+          onComplete={(rating, category) => {
+            void handleOnboardingComplete(rating, category);
+            return;
+          
             setNotification(`¡Bienvenido! Tu rating inicial es ${rating} (${category})`);
-            setTimeout(() => setNotification(null), 5000);
           }}
-          onCancel={() => {
-            setIsAuthenticated(true);
-            setShowOnboarding(false);
-          }}
+          onCancel={handleOnboardingCancel}
         />
       );
     }
     if (isRegistering) {
       return (
-        <RegisterView 
-          onBack={() => setIsRegistering(false)} 
+        <RegisterView
+          onBack={() => setIsRegistering(false)}
           onRegister={(data) => {
-            setTempName(data.name);
-            setShowOnboarding(true);
-            setIsRegistering(false);
+            void completeRegistration(data);
           }}
-          onDetermineRating={() => {
-            setShowOnboarding(true);
-            setIsRegistering(false);
+          onDetermineRating={(data) => {
+            void completeRegistration(data);
           }}
         />
       );
@@ -4888,7 +5812,7 @@ export default function App() {
                     <p className="text-padel-400 text-sm font-bold tracking-widest uppercase">Uruguay</p>
                 </div>
                 <div className="bg-dark-800/60 backdrop-blur-xl border border-white/10 p-6 rounded-3xl shadow-2xl animate-fade-in-up">
-                        <form onSubmit={(e) => { e.preventDefault(); setIsAuthenticated(true); }} className="space-y-4">
+                        <form onSubmit={handleLoginSubmit} className="space-y-4">
                             <h2 className="text-xl font-bold text-white mb-2">Bienvenido</h2>
                             <div className="relative group">
                                 <Users className="absolute left-3 top-3.5 text-gray-500 group-focus-within:text-padel-400 transition-colors" size={20} />
@@ -4898,8 +5822,8 @@ export default function App() {
                                 <Lock className="absolute left-3 top-3.5 text-gray-500 group-focus-within:text-padel-400 transition-colors" size={20} />
                                 <input type="password" placeholder="Contraseña" className="w-full bg-dark-900/50 border border-dark-600 text-white pl-10 pr-12 py-3 rounded-xl focus:outline-none focus:border-padel-500 transition-all" defaultValue="password" />
                             </div>
-                            <Button type="submit" fullWidth className="mt-2 font-bold text-lg shadow-xl shadow-padel-500/10 group relative overflow-hidden">
-                                Ingresar
+                            <Button type="submit" fullWidth disabled={authLoading} className="mt-2 font-bold text-lg shadow-xl shadow-padel-500/10 group relative overflow-hidden">
+                                {authLoading ? 'Ingresando...' : 'Ingresar'}
                             </Button>
                         </form>
                     <div className="mt-6 pt-6 border-t border-white/5 text-center">
@@ -4913,7 +5837,22 @@ export default function App() {
       );
   }
 
-  const handleJoinMatch = (matchId: string, slotIndex: number) => {
+  const handleJoinMatch = async (matchId: string, slotIndex: number) => {
+      const match = matches.find(m => m.id === matchId);
+      if (!match) return;
+
+      if (isBackendManagedMatch(match) && match.backendMatchId) {
+          try {
+              await backendApi.joinMatch(match.backendMatchId);
+              await refreshBackendMatches();
+              setNotification(`Te uniste al partido en ${match.clubName || 'la sede seleccionada'}.`);
+              setTimeout(() => setNotification(null), 3000);
+          } catch (error) {
+              showMatchError(error, 'No se pudo unir al partido.');
+          }
+          return;
+      }
+
       setMatches(prevMatches => prevMatches.map(m => {
           if (m.id === matchId) {
               const newPlayers = [...m.players];
@@ -4929,23 +5868,110 @@ export default function App() {
           return m;
       }));
 
-      const match = matches.find(m => m.id === matchId);
-      if (match) {
-        const clubName = MOCK_CLUBS.find(c => c.id === match.clubId)?.name || 'Club';
+      const localMatch = match;
+      if (localMatch) {
+	        const clubName = localMatch.clubName || clubCatalog?.find(c => c.id === localMatch.clubId)?.name || MOCK_CLUBS.find(c => c.id === localMatch.clubId)?.name || 'Club';
         setNotification(`¡Te has unido al partido en ${clubName}!`);
         setTimeout(() => setNotification(null), 3000);
       }
-  };
+	  };
 
-  const handleBookMatch = (newMatch: Match) => {
+	  const handleLeaveMatch = async (matchId: string) => {
+	      const match = matches.find(m => m.id === matchId);
+	      if (!match) return;
+
+	      if (isBackendManagedMatch(match) && match.backendMatchId) {
+	          try {
+	              await backendApi.leaveMatch(match.backendMatchId);
+	              await refreshBackendMatches();
+	              setNotification('Saliste del partido.');
+	              setTimeout(() => setNotification(null), 3000);
+	          } catch (error) {
+	              showMatchError(error, 'No se pudo salir del partido.');
+	          }
+	          return;
+	      }
+
+	      setMatches(prevMatches => prevMatches.map(currentMatch => ({
+	          ...currentMatch,
+	          players: currentMatch.id === matchId
+	              ? currentMatch.players.map(player => player?.id === currentUser.id ? null : player)
+	              : currentMatch.players,
+	      })));
+	  };
+
+	  const handleCancelMatch = async (matchId: string) => {
+	      const match = matches.find(m => m.id === matchId);
+	      if (!match) return;
+
+	      if (isBackendManagedMatch(match) && match.backendMatchId) {
+	          try {
+	              await backendApi.cancelMatch(match.backendMatchId);
+	              await refreshBackendMatches();
+	              setNotification('Partido cancelado.');
+	              setTimeout(() => setNotification(null), 3000);
+	          } catch (error) {
+	              showMatchError(error, 'No se pudo cancelar el partido.');
+	          }
+	          return;
+	      }
+
+	      setMatches(prevMatches => prevMatches.map(currentMatch => currentMatch.id === matchId
+	          ? { ...currentMatch, status: 'cancelled' }
+	          : currentMatch));
+	  };
+	
+	  const handleBookMatch = async (newMatch: Match) => {
+      if (hasStoredToken()) {
+          try {
+              const backendClubId = newMatch.backendClubId ?? getBackendClubId(newMatch.clubId);
+              const locationParts = [newMatch.clubName, newMatch.courtName].filter(Boolean);
+
+              await backendApi.createMatch({
+                  scheduledAt: combineFrontendMatchDateTime(newMatch),
+                  clubId: backendClubId,
+                  locationText: locationParts.length > 0 ? locationParts.join(' - ') : newMatch.courtName,
+                  notes: newMatch.type === MatchType.FRIENDLY ? 'Recreativo' : 'Por los puntos',
+              });
+
+              await refreshBackendMatches();
+              setNotification("Reserva confirmada con exito.");
+              setTimeout(() => setNotification(null), 3000);
+              setCurrentTab('play');
+              return;
+          } catch (error) {
+              showMatchError(error, 'No se pudo crear el partido.');
+              return;
+          }
+      }
+
       setMatches(prev => [...prev, newMatch]);
       setNotification("¡Reserva confirmada con éxito!");
       setTimeout(() => setNotification(null), 3000);
       setCurrentTab('play'); // Redirect to agenda
   };
 
-  const handleLaunchTournament = (config: any) => {
+  const handleLaunchTournament = async (config: any) => {
       if (!tournamentToLaunch) return;
+
+      const backendTournamentId = getBackendTournamentId(tournamentToLaunch.id);
+      if (backendTournamentId && tournamentToLaunch.format === 'league') {
+          try {
+              await backendApi.launchTournament(backendTournamentId, {
+                  availableCourts: config.availableCourts ?? tournamentToLaunch.availableCourts ?? 1,
+                  numberOfGroups: 1,
+                  leagueRounds: 2,
+                  courtNames: (config.courtNames || tournamentToLaunch.courtNames || []).filter((courtName: string) => courtName?.trim()),
+              });
+              await refreshBackendTournaments();
+              setTournamentToLaunch(null);
+              setNotification("¡Torneo lanzado con éxito!");
+              setTimeout(() => setNotification(null), 3000);
+          } catch (error) {
+              showMatchError(error, 'No se pudo lanzar el torneo.');
+          }
+          return;
+      }
       
       // Find user's team name
       let userTeamName = '';
@@ -5128,7 +6154,24 @@ export default function App() {
       setTimeout(() => setNotification(null), 3000);
   };
 
-  const handleUpdateTournament = (updatedTournament: any) => {
+  const handleUpdateTournament = async (updatedTournament: any) => {
+      const backendTournamentId = getBackendTournamentId(updatedTournament.id);
+      if (backendTournamentId) {
+          try {
+              await backendApi.syncTournamentEntries(
+                  backendTournamentId,
+                  buildSyncTournamentEntriesRequest(updatedTournament),
+              );
+              await refreshBackendTournaments();
+              setTournamentToEdit(null);
+              setNotification("¡Torneo actualizado con éxito!");
+              setTimeout(() => setNotification(null), 3000);
+          } catch (error) {
+              showMatchError(error, 'No se pudieron actualizar los equipos del torneo.');
+          }
+          return;
+      }
+
       setTournamentToEdit(null);
       
       const expectedUsers = (updatedTournament.format === 'americano' && updatedTournament.americanoType === 'dinamico')
@@ -5189,7 +6232,20 @@ export default function App() {
       setTimeout(() => setNotification(null), 3000);
   };
 
-  const handleCreateTournament = (tournamentData?: any) => {
+  const handleCreateTournament = async (tournamentData?: any) => {
+      if (tournamentData?.format === 'league' && hasStoredToken()) {
+          try {
+              await backendApi.createTournament(buildCreateLeagueTournamentRequest(tournamentData));
+              await refreshBackendTournaments();
+              setShowCreateTournament(false);
+              setNotification("¡Torneo creado con éxito!");
+              setTimeout(() => setNotification(null), 3000);
+          } catch (error) {
+              showMatchError(error, 'No se pudo crear el torneo.');
+          }
+          return;
+      }
+
       setShowCreateTournament(false);
       
       // Find if current user is in any team
@@ -5250,9 +6306,52 @@ export default function App() {
 
       setNotification("¡Torneo creado con éxito!");
       setTimeout(() => setNotification(null), 3000);
-  };
+	  };
 
-  const handleRequestAccess = (matchId: string) => {
+	  const handleJoinTournament = async (tournament: any) => {
+	      const backendTournamentId = getBackendTournamentId(tournament.id);
+	      if (!backendTournamentId) return;
+
+	      try {
+	          await backendApi.joinTournament(backendTournamentId);
+	          await refreshBackendTournaments();
+	          setNotification('Ya quedaste inscripto en la liga.');
+	          setTimeout(() => setNotification(null), 3000);
+	      } catch (error) {
+	          showMatchError(error, 'No se pudo completar la inscripcion al torneo.');
+	      }
+	  };
+
+	  const handleLeaveTournament = async (tournament: any) => {
+	      const backendTournamentId = getBackendTournamentId(tournament.id);
+	      if (!backendTournamentId) return;
+
+	      try {
+	          await backendApi.leaveTournament(backendTournamentId);
+	          await refreshBackendTournaments();
+	          setNotification('Saliste de la liga correctamente.');
+	          setTimeout(() => setNotification(null), 3000);
+	      } catch (error) {
+	          showMatchError(error, 'No se pudo salir del torneo.');
+	      }
+	  };
+	
+	  const handleRequestAccess = async (matchId: string) => {
+      const match = matches.find(m => m.id === matchId);
+      if (!match) return;
+
+      if (isBackendManagedMatch(match) && match.backendMatchId) {
+          try {
+              await backendApi.joinMatch(match.backendMatchId);
+              await refreshBackendMatches();
+              setNotification("Â¡Te has unido al partido!");
+              setTimeout(() => setNotification(null), 3000);
+          } catch (error) {
+              showMatchError(error, 'No se pudo unir al partido.');
+          }
+          return;
+      }
+
       // 1. Set to pending
       setMatches(prevMatches => prevMatches.map(m => {
           if (m.id === matchId) {
@@ -5278,9 +6377,63 @@ export default function App() {
       }, 3000);
   };
 
-  const handleSubmitResult = (matchId: string, result: [number, number][]) => {
+  const handleSubmitResult = async (matchId: string, result: [number, number][]) => {
       const match = matches.find(m => m.id === matchId);
       if (!match) return;
+
+      if (isBackendTournamentMatch(match) && match.backendMatchId && match.tournamentId) {
+          const backendTournamentId = getBackendTournamentId(match.tournamentId);
+          if (!backendTournamentId) {
+              setNotification('No se pudo resolver el torneo asociado a este partido.');
+              setTimeout(() => setNotification(null), 4000);
+              return;
+          }
+
+          try {
+              await backendApi.submitTournamentMatchResult(
+                  backendTournamentId,
+                  match.backendMatchId,
+                  buildSubmitTournamentResultRequest(result),
+              );
+              await refreshBackendTournaments();
+              setNotification("Resultado enviado. Esperando validación del equipo rival...");
+              setTimeout(() => setNotification(null), 4000);
+          } catch (error) {
+              const fallbackMessage = error instanceof Error ? error.message : 'No se pudo enviar el resultado del torneo.';
+              showMatchError(error, fallbackMessage);
+          }
+          return;
+      }
+
+      if (isBackendManagedMatch(match) && match.backendMatchId) {
+          try {
+              if (!match.teamsAssigned) {
+                  if (!isBackendMatchCreator(match, currentUser)) {
+                      setNotification("El creador del partido debe definir los equipos antes de cargar el resultado.");
+                      setTimeout(() => setNotification(null), 4000);
+                      return;
+                  }
+
+                  const assignments = buildAutoTeamAssignments(match);
+                  if (!assignments) {
+                      setNotification("Se necesitan 4 jugadores definidos para asignar equipos.");
+                      setTimeout(() => setNotification(null), 4000);
+                      return;
+                  }
+
+                  await backendApi.assignMatchTeams(match.backendMatchId, assignments);
+              }
+
+              await backendApi.submitMatchResult(match.backendMatchId, buildSubmitResultRequest(result));
+              await refreshBackendMatches();
+              setNotification("Resultado enviado. Esperando validacion del rival...");
+              setTimeout(() => setNotification(null), 4000);
+          } catch (error) {
+              const fallbackMessage = error instanceof Error ? error.message : 'No se pudo enviar el resultado.';
+              showMatchError(error, fallbackMessage);
+          }
+          return;
+      }
 
       // Check participation or if user is tournament creator
       const isUserInMatch = match.players.some(p => p?.id === currentUser.id);
@@ -5325,10 +6478,82 @@ export default function App() {
       setSelectedMatchForResult(match);
   };
 
-  const handleConfirmResult = (matchId: string, overrideResult?: [number, number][]) => {
+  const handleRejectResult = async (matchId: string) => {
+      const match = matches.find(m => m.id === matchId);
+      if (!match) return;
+
+      if (isBackendTournamentMatch(match) && match.backendMatchId && match.tournamentId) {
+          const backendTournamentId = getBackendTournamentId(match.tournamentId);
+          if (!backendTournamentId) {
+              setNotification('No se pudo resolver el torneo asociado a este partido.');
+              setTimeout(() => setNotification(null), 4000);
+              return;
+          }
+
+          try {
+              await backendApi.rejectTournamentMatchResult(backendTournamentId, match.backendMatchId);
+              await refreshBackendTournaments();
+              setNotification("Resultado rechazado. El partido volvió a quedar listo para reenviar marcador.");
+              setTimeout(() => setNotification(null), 4000);
+          } catch (error) {
+              showMatchError(error, 'No se pudo rechazar el resultado del torneo.');
+          }
+          return;
+      }
+
+      if (isBackendManagedMatch(match) && match.backendMatchId) {
+          try {
+              await backendApi.rejectMatchResult(match.backendMatchId);
+              await refreshBackendMatches();
+              setNotification("Resultado rechazado. El partido volvio a quedar listo para reenviar marcador.");
+              setTimeout(() => setNotification(null), 4000);
+          } catch (error) {
+              showMatchError(error, 'No se pudo rechazar el resultado.');
+          }
+          return;
+      }
+
+      setNotification("El rechazo de resultados sigue pendiente para este flujo local.");
+      setTimeout(() => setNotification(null), 3000);
+  };
+
+  const handleConfirmResult = async (matchId: string, overrideResult?: [number, number][]) => {
       const match = matches.find(m => m.id === matchId);
       const finalResult = overrideResult || match?.result;
       if (!match || !finalResult) return;
+
+      if (isBackendTournamentMatch(match) && match.backendMatchId && match.tournamentId) {
+          const backendTournamentId = getBackendTournamentId(match.tournamentId);
+          if (!backendTournamentId) {
+              setNotification('No se pudo resolver el torneo asociado a este partido.');
+              setTimeout(() => setNotification(null), 4000);
+              return;
+          }
+
+          try {
+              await backendApi.confirmTournamentMatchResult(backendTournamentId, match.backendMatchId);
+              await refreshBackendTournaments();
+              setNotification("Resultado confirmado. La tabla oficial del torneo ya fue actualizada por el backend.");
+              setTimeout(() => setNotification(null), 4000);
+          } catch (error) {
+              showMatchError(error, 'No se pudo confirmar el resultado del torneo.');
+          }
+          return;
+      }
+
+      if (isBackendManagedMatch(match) && match.backendMatchId) {
+          try {
+              await backendApi.confirmMatchResult(match.backendMatchId);
+              await hydrateAuthenticatedUser(tempName || readStoredDisplayName());
+              await refreshRankingAndHistory();
+              await refreshBackendMatches();
+              setNotification("Resultado confirmado. El estado oficial y el rating ya fueron actualizados por el backend.");
+              setTimeout(() => setNotification(null), 4000);
+          } catch (error) {
+              showMatchError(error, 'No se pudo confirmar el resultado.');
+          }
+          return;
+      }
 
       // Check participation or if user is tournament creator
       const isUserInMatch = match.players.some(p => p?.id === currentUser.id);
@@ -5704,14 +6929,21 @@ export default function App() {
          )}
          
          {showClubRankings && <ClubRankingsView currentUser={currentUser} onClose={() => setShowClubRankings(false)} />}
-         {showNationalRanking && <NationalRankingView currentUser={currentUser} onClose={() => setShowNationalRanking(false)} />}
+         {showNationalRanking && (
+             <NationalRankingBackendView
+                 currentUser={currentUser}
+                 rankingRows={rankingRows}
+                 rankingPosition={currentUserRankingPosition}
+                 onClose={() => setShowNationalRanking(false)}
+             />
+         )}
          {showCoaches && <CoachesView onClose={() => setShowCoaches(false)} />}
          {showClubUsers && <ClubUsersView onClose={() => setShowClubUsers(false)} />}
          {showClubAgenda && <ClubAgendaView onClose={() => setShowClubAgenda(false)} />}
          {showTopPartners && <TopPartnersView currentUser={currentUser} onClose={() => setShowTopPartners(false)} />}
          {showTopRivals && <TopRivalsView onClose={() => setShowTopRivals(false)} />}
-         {showCreateTournament && <CreateTournamentView currentUser={currentUser} onClose={() => setShowCreateTournament(false)} onCreate={(data) => handleCreateTournament(data)} />}
-         {tournamentToEdit && <AddTeamsToTournamentView currentUser={currentUser} tournament={tournamentToEdit} onClose={() => setTournamentToEdit(null)} onUpdate={handleUpdateTournament} />}
+         {showCreateTournament && <CreateTournamentView currentUser={currentUser} selectablePlayers={tournamentSelectablePlayers.length > 0 ? tournamentSelectablePlayers : undefined} clubOptions={tournamentClubOptions.length > 0 ? tournamentClubOptions : undefined} onClose={() => setShowCreateTournament(false)} onCreate={(data) => handleCreateTournament(data)} />}
+         {tournamentToEdit && <AddTeamsToTournamentView currentUser={currentUser} availablePlayers={tournamentSelectablePlayers.length > 0 ? tournamentSelectablePlayers : undefined} tournament={tournamentToEdit} onClose={() => setTournamentToEdit(null)} onUpdate={handleUpdateTournament} />}
          {postMatchResult && (
              <PostMatchView 
                  oldRating={postMatchResult.oldRating} 
@@ -5721,12 +6953,21 @@ export default function App() {
              />
          )}
 
-        {currentTab === 'play' && <PlayView currentUser={currentUser} navigateTo={setCurrentTab} onOpenCoaches={() => setShowCoaches(true)} agenda={agenda} matches={matches} tournaments={tournaments} onJoin={handleJoinMatch} onRequest={handleRequestAccess} onSubmitResult={handleSubmitResult} onConfirmResult={handleConfirmResult} onUserClick={setSelectedPublicUser} onLaunchTournament={setTournamentToLaunch} onOpenTournamentStatus={setSelectedTournamentStatus} onAddTeamsToTournament={setTournamentToEdit} onAddResult={handleOpenResultInput} onArchiveTournament={(id) => setTournaments(prev => prev.map(t => t.id === id ? { ...t, isArchived: true } : t))} />}
-        {currentTab === 'matches' && <MatchesView currentUser={currentUser} matches={matches} onJoin={handleJoinMatch} onRequest={handleRequestAccess} onUserClick={setSelectedPublicUser} />}
-        {currentTab === 'competition' && <CompetitionView currentUser={currentUser} onCreateTournament={() => setShowCreateTournament(true)} />}
+        {currentTab === 'play' && <PlayView currentUser={currentUser} rankingPosition={currentUserRankingPosition} myMatchesByScope={myMatchesByScope} navigateTo={setCurrentTab} onOpenCoaches={() => setShowCoaches(true)} agenda={agenda} matches={matches} tournaments={tournaments} onJoin={handleJoinMatch} onRequest={handleRequestAccess} onLeaveMatch={handleLeaveMatch} onCancelMatch={handleCancelMatch} onSubmitResult={handleSubmitResult} onConfirmResult={handleConfirmResult} onRejectResult={handleRejectResult} onUserClick={setSelectedPublicUser} onLaunchTournament={setTournamentToLaunch} onOpenTournamentStatus={setSelectedTournamentStatus} onAddTeamsToTournament={setTournamentToEdit} onAddResult={handleOpenResultInput} onArchiveTournament={(id) => setTournaments(prev => prev.map(t => t.id === id ? { ...t, isArchived: true } : t))} />}
+        {currentTab === 'matches' && <MatchesView currentUser={currentUser} matches={matches} onJoin={handleJoinMatch} onRequest={handleRequestAccess} onLeaveMatch={handleLeaveMatch} onCancelMatch={handleCancelMatch} onUserClick={setSelectedPublicUser} />}
+        {currentTab === 'competition' && (
+            <CompetitionView
+                currentUser={currentUser}
+                tournaments={competitionTournaments}
+                onCreateTournament={() => setShowCreateTournament(true)}
+                onOpenTournamentStatus={setSelectedTournamentStatus}
+                onJoinTournament={handleJoinTournament}
+                onLeaveTournament={handleLeaveTournament}
+            />
+        )}
         {currentTab === 'club_dashboard' && <ClubDashboardView onOpenClubUsers={() => setShowClubUsers(true)} onOpenClubAgenda={() => setShowClubAgenda(true)} />}
-        {currentTab === 'clubs' && <ClubsView currentUser={currentUser} onBook={handleBookMatch} />}
-        {currentTab === 'profile' && <ProfileView currentUser={currentUser} onOpenClubRankings={() => setShowClubRankings(true)} onOpenTopPartners={() => setShowTopPartners(true)} onOpenTopRivals={() => setShowTopRivals(true)} onPremiumFeatureAttempt={handlePremiumAttempt} onUserClick={setSelectedPublicUser} onOpenNationalRanking={() => setShowNationalRanking(true)} />}
+        {currentTab === 'clubs' && <ClubsView currentUser={currentUser} clubs={clubCatalog ?? undefined} onBook={handleBookMatch} />}
+        {currentTab === 'profile' && <ProfileView currentUser={currentUser} rankingPosition={currentUserRankingPosition} ratingHistory={ratingHistoryView} onOpenClubRankings={() => setShowClubRankings(true)} onOpenTopPartners={() => setShowTopPartners(true)} onOpenTopRivals={() => setShowTopRivals(true)} onPremiumFeatureAttempt={handlePremiumAttempt} onUserClick={setSelectedPublicUser} onOpenNationalRanking={() => setShowNationalRanking(true)} />}
 
         {tournamentToLaunch && <LaunchTournamentView tournament={tournamentToLaunch} matches={matches} onClose={() => setTournamentToLaunch(null)} onLaunch={handleLaunchTournament} />}
         {selectedTournamentStatus && (
@@ -5736,6 +6977,7 @@ export default function App() {
                 matches={matches} 
                 onClose={() => setSelectedTournamentStatus(null)} 
                 onAddResult={setSelectedMatchForResult} 
+                onUserClick={setSelectedPublicUser}
             />
         )}
         
@@ -5761,6 +7003,10 @@ export default function App() {
                         }}
                         onConfirm={(matchId) => {
                             handleConfirmResult(matchId);
+                            setSelectedMatchForResult(null);
+                        }}
+                        onReject={(matchId) => {
+                            handleRejectResult(matchId);
                             setSelectedMatchForResult(null);
                         }}
                     />

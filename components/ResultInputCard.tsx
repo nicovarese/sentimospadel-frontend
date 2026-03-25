@@ -8,9 +8,10 @@ interface ResultInputCardProps {
   currentUser: User;
   onSubmit: (matchId: string, result: [number, number][]) => void;
   onConfirm: (matchId: string) => void;
+  onReject?: (matchId: string) => void;
 }
 
-export const ResultInputCard: React.FC<ResultInputCardProps> = ({ match, currentUser, onSubmit, onConfirm }) => {
+export const ResultInputCard: React.FC<ResultInputCardProps> = ({ match, currentUser, onSubmit, onConfirm, onReject }) => {
   // Sets: Array of 3 items, each item is [scoreA, scoreB]
   const [sets, setSets] = useState<[string, string][]>([['', ''], ['', ''], ['', '']]);
   const [error, setError] = useState<string | null>(null);
@@ -250,7 +251,7 @@ export const ResultInputCard: React.FC<ResultInputCardProps> = ({ match, current
             <div className="flex gap-2 mt-auto">
                 {isValidationMode ? (
                     <>
-                        <Button variant="danger" size="sm" className="flex-1 h-8 text-[10px] rounded-lg" onClick={() => alert("Pendiente")}>
+                        <Button variant="danger" size="sm" className="flex-1 h-8 text-[10px] rounded-lg" onClick={() => onReject && onReject(match.id)}>
                             Rechazar
                         </Button>
                         <Button fullWidth size="sm" className="flex-[2] h-8 text-[10px] rounded-lg" onClick={() => onConfirm(match.id)}>

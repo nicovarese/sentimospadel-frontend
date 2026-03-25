@@ -5,7 +5,7 @@ import { Button } from './Button';
 interface RegisterViewProps {
   onBack: () => void;
   onRegister: (data: any) => void;
-  onDetermineRating: () => void;
+  onDetermineRating: (data: any) => void;
 }
 
 export const RegisterView: React.FC<RegisterViewProps> = ({ onBack, onRegister, onDetermineRating }) => {
@@ -104,7 +104,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ onBack, onRegister, 
             <p className="text-xs text-gray-500 uppercase font-bold tracking-wider mb-4">Opciones Adicionales</p>
             
             <button 
-              onClick={onDetermineRating}
+              onClick={() => onDetermineRating(formData)}
               className="w-full bg-gradient-to-r from-padel-500/10 to-blue-500/10 border border-padel-500/30 p-4 rounded-2xl flex items-center justify-between group hover:border-padel-500/60 transition-all active:scale-95"
             >
               <div className="flex items-center gap-3">

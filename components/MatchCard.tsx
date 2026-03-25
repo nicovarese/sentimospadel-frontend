@@ -9,12 +9,14 @@ interface MatchCardProps {
   clubName: string;
   onJoin?: (id: string, slotIndex: number) => void;
   onRequest?: (id: string) => void;
+  onLeave?: (id: string) => void;
+  onCancel?: (id: string) => void;
   onUserClick?: (user: User) => void;
   onAddResult?: (match: Match) => void;
   className?: string;
 }
 
-export const MatchCard: React.FC<MatchCardProps> = ({ match, currentUser, clubName, onJoin, onRequest, onUserClick, onAddResult, className = '' }) => {
+export const MatchCard: React.FC<MatchCardProps> = ({ match, currentUser, clubName, onJoin, onRequest, onLeave, onCancel, onUserClick, onAddResult, className = '' }) => {
   const [analysis, setAnalysis] = useState<string | null>(null);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
 
@@ -36,8 +38,14 @@ export const MatchCard: React.FC<MatchCardProps> = ({ match, currentUser, clubNa
   const isRejected = match.rejectedPlayerIds?.includes(currentUser.id);
   const isApprovedGuest = match.approvedGuestIds?.includes(currentUser.id);
   const isJoined = match.players.some(p => p?.id === currentUser.id);
+  const isLockedMatchStatus = ['completed', 'awaiting_result', 'awaiting_validation', 'cancelled'].includes(match.status);
+  const isBackendSocialMatch = match.matchSource === 'backend' && !match.isTournamentMatch;
+  const isMatchCreator = currentUser.backendPlayerProfileId != null
+    && match.createdByPlayerProfileId === currentUser.backendPlayerProfileId;
+  const canLeaveBackendMatch = isBackendSocialMatch && isJoined && !isMatchCreator && !isLockedMatchStatus;
+  const canCancelBackendMatch = isBackendSocialMatch && isMatchCreator && !isLockedMatchStatus;
 
-  const canPickSlot = !isJoined && !isFilled && (isApprovedGuest || isLevelFit) && !match.isTournamentMatch;
+  const canPickSlot = !isLockedMatchStatus && !isJoined && !isFilled && (isApprovedGuest || isLevelFit) && !match.isTournamentMatch;
 
   // Type Logic & Styling
   const isCompetitive = match.type === MatchType.COMPETITIVE;
@@ -62,6 +70,7 @@ export const MatchCard: React.FC<MatchCardProps> = ({ match, currentUser, clubNa
 
   // ELO Calculation Mock
   const calculateExpectedElo = () => {
+      if (match.matchSource && match.matchSource !== 'local') return null;
       if (!isFilled) return null;
       return isCompetitive ? 12 : 0;
   };
@@ -79,6 +88,14 @@ export const MatchCard: React.FC<MatchCardProps> = ({ match, currentUser, clubNa
   const handleMainAction = () => {
       if (onAddResult && match.status === 'awaiting_result') {
           onAddResult(match);
+          return;
+      }
+      if (canCancelBackendMatch && onCancel) {
+          onCancel(match.id);
+          return;
+      }
+      if (canLeaveBackendMatch && onLeave) {
+          onLeave(match.id);
           return;
       }
       if (isJoined) return;
@@ -131,9 +148,9 @@ export const MatchCard: React.FC<MatchCardProps> = ({ match, currentUser, clubNa
                     {player.name.split(' ')[0]}
                 </p>
                 {player.categoryNumber && player.categoryNumber <= 2 && player.verificationStatus !== 'verified' ? (
-                    <p className="text-amber-500 text-[8px] mt-0.5 leading-none font-bold">Top (pendiente)</p>
+                    <p className="text-amber-500 text-[8px] mt-0.5 leading-none font-bold">{player.categoryNumber}ª · Pendiente</p>
                 ) : (
-                    isCompetitive && <p className="text-gray-500 text-[9px] mt-0.5 leading-none">Rating: {player.level.toFixed(2)}</p>
+                    isCompetitive && player.hasOfficialRating !== false && <p className="text-gray-500 text-[9px] mt-0.5 leading-none">Rating: {player.level.toFixed(2)}</p>
                 )}
             </div>
         </div>
@@ -148,7 +165,11 @@ export const MatchCard: React.FC<MatchCardProps> = ({ match, currentUser, clubNa
   let mainButtonDisabled = false;
   let mainButtonStyle = 'bg-padel-600 hover:bg-padel-500 text-white shadow-lg shadow-padel-900/50';
 
-  if (onAddResult && match.status === 'awaiting_result') {
+  if (match.status === 'cancelled') {
+      mainButtonText = 'Cancelado';
+      mainButtonDisabled = true;
+      mainButtonStyle = 'bg-dark-700 text-gray-500 cursor-not-allowed border border-dark-600';
+  } else if (onAddResult && match.status === 'awaiting_result') {
       if (match.isTournamentMatch && match.players.every(p => p === null)) {
           mainButtonText = 'Equipos por definirse';
           mainButtonDisabled = true;
@@ -158,6 +179,14 @@ export const MatchCard: React.FC<MatchCardProps> = ({ match, currentUser, clubNa
           mainButtonDisabled = false;
           mainButtonStyle = 'bg-padel-600 hover:bg-padel-500 text-white shadow-lg shadow-padel-900/50';
       }
+  } else if (canCancelBackendMatch) {
+      mainButtonText = 'Cancelar';
+      mainButtonDisabled = false;
+      mainButtonStyle = 'bg-red-500 hover:bg-red-600 text-white';
+  } else if (canLeaveBackendMatch) {
+      mainButtonText = 'Salir';
+      mainButtonDisabled = false;
+      mainButtonStyle = 'bg-dark-700 hover:bg-dark-600 text-white border border-dark-600';
   } else if (isJoined) {
       mainButtonText = 'Confirmado';
       mainButtonDisabled = true;
@@ -256,7 +285,7 @@ export const MatchCard: React.FC<MatchCardProps> = ({ match, currentUser, clubNa
                 <div className="flex items-center gap-1.5 overflow-hidden text-[10px] text-gray-400">
                     <MapPin size={10} className="shrink-0 text-gray-500"/>
                     <span className="truncate max-w-[160px]">
-                        <span className="text-gray-300 font-semibold">{clubName}</span>
+                        <span className="text-gray-300 font-semibold">{match.clubName || clubName}</span>
                         <span className="mx-1 text-dark-600">•</span>
                         {match.courtName}
                     </span>
