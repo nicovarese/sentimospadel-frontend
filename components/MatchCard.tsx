@@ -86,7 +86,7 @@ export const MatchCard: React.FC<MatchCardProps> = ({ match, currentUser, clubNa
   };
 
   const handleMainAction = () => {
-      if (onAddResult && match.status === 'awaiting_result') {
+      if (onAddResult && (match.status === 'awaiting_result' || match.status === 'awaiting_validation')) {
           onAddResult(match);
           return;
       }
@@ -169,13 +169,13 @@ export const MatchCard: React.FC<MatchCardProps> = ({ match, currentUser, clubNa
       mainButtonText = 'Cancelado';
       mainButtonDisabled = true;
       mainButtonStyle = 'bg-dark-700 text-gray-500 cursor-not-allowed border border-dark-600';
-  } else if (onAddResult && match.status === 'awaiting_result') {
+  } else if (onAddResult && (match.status === 'awaiting_result' || match.status === 'awaiting_validation')) {
       if (match.isTournamentMatch && match.players.every(p => p === null)) {
           mainButtonText = 'Equipos por definirse';
           mainButtonDisabled = true;
           mainButtonStyle = 'bg-dark-700 text-gray-500 cursor-not-allowed border border-dark-600';
       } else {
-          mainButtonText = 'Agregar Resultado';
+          mainButtonText = match.status === 'awaiting_validation' ? 'Validar Resultado' : 'Agregar Resultado';
           mainButtonDisabled = false;
           mainButtonStyle = 'bg-padel-600 hover:bg-padel-500 text-white shadow-lg shadow-padel-900/50';
       }

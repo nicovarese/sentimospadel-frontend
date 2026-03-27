@@ -6,6 +6,12 @@ export type MatchParticipantTeam = 'TEAM_ONE' | 'TEAM_TWO';
 export type MatchResultStatus = 'PENDING' | 'CONFIRMED' | 'REJECTED';
 export type MatchWinnerTeam = 'TEAM_ONE' | 'TEAM_TWO';
 export type MyMatchesScope = 'upcoming' | 'completed' | 'cancelled' | 'pending_result';
+export type PendingActionType =
+  | 'SUBMIT_MATCH_RESULT'
+  | 'CONFIRM_MATCH_RESULT'
+  | 'SUBMIT_TOURNAMENT_RESULT'
+  | 'CONFIRM_TOURNAMENT_RESULT';
+export type NotificationStatus = 'UNREAD' | 'READ';
 export type TournamentStatus = 'DRAFT' | 'OPEN' | 'CLOSED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
 export type TournamentFormat = 'LEAGUE' | 'ELIMINATION' | 'AMERICANO';
 export type TournamentAmericanoType = 'FIXED' | 'DYNAMIC';
@@ -193,6 +199,102 @@ export interface ClubResponse {
   updatedAt: string;
 }
 
+export type ClubAgendaSlotStatus = 'AVAILABLE' | 'RESERVED' | 'BLOCKED';
+export type ClubAgendaSlotActionType = 'RESERVE' | 'BLOCK' | 'FREE';
+export type ClubQuickActionType =
+  | 'NOTIFY_USERS'
+  | 'ACTIVATE_RESERVATION_PROMO'
+  | 'ACTIVATE_LAST_MINUTE_DISCOUNT';
+
+export interface ClubManagementActivityResponse {
+  id: number;
+  title: string;
+  description: string;
+  occurredAt: string;
+}
+
+export interface ClubManagementDashboardResponse {
+  clubId: number;
+  clubName: string;
+  activeCourtsCount: number;
+  totalCourtsCount: number;
+  todayRevenueUyu: number;
+  todayReservationsCount: number;
+  recentActivities: ClubManagementActivityResponse[];
+}
+
+export interface ClubManagementTopUserResponse {
+  position: number;
+  playerProfileId: number;
+  fullName: string;
+  photoUrl: string | null;
+  matchesThisMonth: number;
+}
+
+export interface ClubManagementUsersResponse {
+  clubId: number;
+  clubName: string;
+  activeUsersCount: number;
+  newUsersThisMonthCount: number;
+  inactiveUsersCount: number;
+  averageRevenuePerUserUyu: number;
+  averageMatchesThisMonth: number;
+  averageMatchesPreviousMonth: number;
+  averageMatchesYear: number;
+  topUsers: ClubManagementTopUserResponse[];
+}
+
+export interface ClubManagementAgendaSlotResponse {
+  id: string;
+  time: string;
+  status: ClubAgendaSlotStatus;
+  reservedByName: string | null;
+}
+
+export interface ClubManagementAgendaCourtResponse {
+  id: number;
+  name: string;
+  slots: ClubManagementAgendaSlotResponse[];
+}
+
+export interface ClubManagementAgendaResponse {
+  clubId: number;
+  clubName: string;
+  date: string;
+  courts: ClubManagementAgendaCourtResponse[];
+}
+
+export interface ClubAgendaSlotActionRequest {
+  date: string;
+  courtId: number;
+  time: string;
+  action: ClubAgendaSlotActionType;
+  reservedByName?: string | null;
+}
+
+export interface ClubQuickActionRequest {
+  type: ClubQuickActionType;
+}
+
+export interface ClubQuickActionResponse {
+  message: string;
+}
+
+export interface CoachResponse {
+  id: number;
+  fullName: string;
+  clubName: string;
+  currentRating: number;
+  currentCategory: UruguayCategory | null;
+  reviewsCount: number;
+  averageRating: number;
+  hourlyRateUyu: number;
+  phone: string;
+  photoUrl: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface RankingEntryResponse {
   position: number;
   playerProfileId: number;
@@ -235,6 +337,73 @@ export interface PlayerMatchHistoryEntryResponse {
   authenticatedPlayerIsParticipant: boolean;
   authenticatedPlayerTeam: MatchParticipantTeam | null;
   authenticatedPlayerWon: boolean | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PlayerPartnerInsightResponse {
+  playerProfileId: number;
+  fullName: string;
+  photoUrl: string | null;
+  matchesWonTogether: number;
+  ratingGainedTogether: number;
+}
+
+export interface PlayerRivalInsightResponse {
+  playerProfileId: number;
+  fullName: string;
+  photoUrl: string | null;
+  matchesLostAgainst: number;
+  ratingLostAgainst: number;
+}
+
+export interface ClubRankingEntryResponse {
+  playerProfileId: number;
+  fullName: string;
+  photoUrl: string | null;
+  currentRating: number;
+  currentCategory: UruguayCategory | null;
+  matchesPlayedAtClub: number;
+}
+
+export interface ClubRankingBucketResponse {
+  userRank: number | null;
+  userEntry: ClubRankingEntryResponse | null;
+  topEntries: ClubRankingEntryResponse[];
+}
+
+export interface PlayerClubRankingSummaryResponse {
+  clubId: number;
+  clubName: string;
+  matchesPlayedByUser: number;
+  competitive: ClubRankingBucketResponse;
+  social: ClubRankingBucketResponse;
+}
+
+export interface PendingActionResponse {
+  notificationId: number | null;
+  type: PendingActionType;
+  notificationStatus: NotificationStatus | null;
+  matchId: number | null;
+  tournamentId: number | null;
+  tournamentMatchId: number | null;
+  title: string;
+  message: string;
+  scheduledAt: string | null;
+  dueAt: string | null;
+}
+
+export interface NotificationResponse {
+  id: number;
+  type: PendingActionType;
+  status: NotificationStatus;
+  title: string;
+  message: string;
+  matchId: number | null;
+  tournamentId: number | null;
+  tournamentMatchId: number | null;
+  active: boolean;
+  readAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -521,6 +690,32 @@ export const backendApi = {
       auth: false,
     }),
 
+  getMyClubManagementDashboard: () =>
+    apiRequest<ClubManagementDashboardResponse>('/api/clubs/me/management/dashboard'),
+
+  getMyClubManagementUsers: () =>
+    apiRequest<ClubManagementUsersResponse>('/api/clubs/me/management/users'),
+
+  getMyClubManagementAgenda: (date: string) =>
+    apiRequest<ClubManagementAgendaResponse>(`/api/clubs/me/management/agenda?date=${encodeURIComponent(date)}`),
+
+  applyMyClubAgendaSlotAction: (request: ClubAgendaSlotActionRequest) =>
+    apiRequest<ClubManagementAgendaResponse>('/api/clubs/me/management/agenda/slot-action', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    }),
+
+  executeMyClubQuickAction: (request: ClubQuickActionRequest) =>
+    apiRequest<ClubQuickActionResponse>('/api/clubs/me/management/quick-actions', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    }),
+
+  getCoaches: () =>
+    apiRequest<CoachResponse[]>('/api/coaches', {
+      auth: false,
+    }),
+
   getMyPlayerProfile: () =>
     apiRequest<PlayerProfileResponse>('/api/players/me'),
 
@@ -536,6 +731,26 @@ export const backendApi = {
     apiRequest<PlayerMatchHistoryEntryResponse[]>(
       `/api/players/me/matches${scope ? `?scope=${scope}` : ''}`,
     ),
+
+  getMyTopPartners: () =>
+    apiRequest<PlayerPartnerInsightResponse[]>('/api/players/me/top-partners'),
+
+  getMyTopRivals: () =>
+    apiRequest<PlayerRivalInsightResponse[]>('/api/players/me/top-rivals'),
+
+  getMyClubRankings: () =>
+    apiRequest<PlayerClubRankingSummaryResponse[]>('/api/players/me/club-rankings'),
+
+  getMyPendingActions: () =>
+    apiRequest<PendingActionResponse[]>('/api/players/me/pending-actions'),
+
+  getMyNotifications: () =>
+    apiRequest<NotificationResponse[]>('/api/notifications'),
+
+  markNotificationRead: (notificationId: number) =>
+    apiRequest<NotificationResponse>(`/api/notifications/${notificationId}/read`, {
+      method: 'POST',
+    }),
 
   getRankings: () =>
     apiRequest<RankingEntryResponse[]>('/api/rankings', {

@@ -74,6 +74,12 @@ export interface Match {
   authenticatedPlayerTeam?: 'TEAM_ONE' | 'TEAM_TWO' | null;
   authenticatedPlayerWon?: boolean | null;
   teamsAssigned?: boolean;
+  pendingNotificationId?: number;
+  pendingActionType?:
+    | 'SUBMIT_MATCH_RESULT'
+    | 'CONFIRM_MATCH_RESULT'
+    | 'SUBMIT_TOURNAMENT_RESULT'
+    | 'CONFIRM_TOURNAMENT_RESULT';
   pendingPlayerIds?: string[]; // IDs of users requesting to join
   rejectedPlayerIds?: string[]; // IDs of users rejected by the lobby
   approvedGuestIds?: string[]; // IDs of users who requested and were approved, ready to join

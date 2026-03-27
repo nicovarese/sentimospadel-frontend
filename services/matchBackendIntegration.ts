@@ -66,7 +66,7 @@ const toFrontendStatus = (match: BackendMatchLike): Match['status'] => {
   }
 
   if (match.status === 'FULL') {
-    return 'awaiting_result';
+    return 'confirmed';
   }
 
   return 'open';
