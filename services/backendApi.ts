@@ -1,6 +1,8 @@
 export type AnswerOption = 'A' | 'B' | 'C' | 'D' | 'E';
 export type UruguayCategory = 'PRIMERA' | 'SEGUNDA' | 'TERCERA' | 'CUARTA' | 'QUINTA' | 'SEXTA' | 'SEPTIMA';
 export type ClubVerificationStatus = 'NOT_REQUIRED' | 'PENDING' | 'VERIFIED' | 'REJECTED';
+export type UserRole = 'PLAYER' | 'ADMIN';
+export type RegisterAccountType = 'PLAYER' | 'CLUB';
 export type MatchStatus = 'OPEN' | 'FULL' | 'CANCELLED' | 'RESULT_PENDING' | 'COMPLETED';
 export type MatchParticipantTeam = 'TEAM_ONE' | 'TEAM_TWO';
 export type MatchResultStatus = 'PENDING' | 'CONFIRMED' | 'REJECTED';
@@ -18,7 +20,7 @@ export type TournamentAmericanoType = 'FIXED' | 'DYNAMIC';
 export type TournamentStandingsTiebreak = 'SETS_DIFFERENCE' | 'GAMES_DIFFERENCE';
 export type TournamentEntryStatus = 'PENDING' | 'CONFIRMED';
 export type TournamentMatchStatus = 'SCHEDULED' | 'RESULT_PENDING' | 'COMPLETED';
-export type TournamentMatchPhase = 'LEAGUE' | 'GROUP_STAGE' | 'QUARTERFINAL' | 'SEMIFINAL' | 'FINAL';
+export type TournamentMatchPhase = 'LEAGUE_STAGE' | 'GROUP_STAGE' | 'AMERICANO_STAGE' | 'QUARTERFINAL' | 'SEMIFINAL' | 'FINAL';
 export type TournamentMatchResultStatus = 'PENDING' | 'CONFIRMED' | 'REJECTED';
 
 export interface LoginRequest {
@@ -29,6 +31,10 @@ export interface LoginRequest {
 export interface RegisterRequest {
   email: string;
   password: string;
+  accountType: RegisterAccountType;
+  clubName?: string | null;
+  clubCity?: string | null;
+  clubAddress?: string | null;
 }
 
 export interface LoginResponse {
@@ -36,15 +42,19 @@ export interface LoginResponse {
   tokenType: string;
   id: number;
   email: string;
-  role: string;
+  role: UserRole;
   status: string;
+  managedClubId: number | null;
+  managedClubName: string | null;
 }
 
 export interface RegisterResponse {
   id: number;
   email: string;
-  role: string;
+  role: UserRole;
   status: string;
+  managedClubId: number | null;
+  managedClubName: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -52,8 +62,10 @@ export interface RegisterResponse {
 export interface CurrentUserResponse {
   id: number;
   email: string;
-  role: string;
+  role: UserRole;
   status: string;
+  managedClubId: number | null;
+  managedClubName: string | null;
 }
 
 export interface InitialSurveyRequest {
@@ -417,6 +429,7 @@ export interface TournamentEntryMemberResponse {
 export interface TournamentEntryResponse {
   id: number;
   teamName: string;
+  groupLabel: string | null;
   status: TournamentEntryStatus;
   timePreferences: string[];
   members: TournamentEntryMemberResponse[];
@@ -443,6 +456,7 @@ export interface TournamentResponse {
   availableCourts: number | null;
   numberOfGroups: number | null;
   leagueRounds: number | null;
+  matchesPerParticipant: number | null;
   standingsTiebreak: TournamentStandingsTiebreak;
   courtNames: string[];
   launchedAt: string | null;
@@ -476,6 +490,7 @@ export interface CreateTournamentRequest {
   openEnrollment?: boolean | null;
   competitive?: boolean | null;
   leagueRounds?: number | null;
+  matchesPerParticipant?: number | null;
   standingsTiebreak?: TournamentStandingsTiebreak | null;
   availableCourts?: number | null;
   courtNames?: string[];
@@ -567,10 +582,16 @@ export interface TournamentStandingsEntryResponse {
   gamesDifference: number;
 }
 
+export interface TournamentStandingsGroupResponse {
+  groupName: string;
+  standings: TournamentStandingsEntryResponse[];
+}
+
 export interface TournamentStandingsResponse {
   tournamentId: number;
   tiebreak: TournamentStandingsTiebreak;
   standings: TournamentStandingsEntryResponse[];
+  groups: TournamentStandingsGroupResponse[];
 }
 
 export class BackendApiError extends Error {

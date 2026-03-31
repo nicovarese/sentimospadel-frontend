@@ -5,17 +5,21 @@ interface NavBarProps {
   currentTab: string;
   onTabChange: (tab: string) => void;
   userAvatar?: string;
+  accountType?: 'player' | 'club';
 }
 
-export const NavBar: React.FC<NavBarProps> = ({ currentTab, onTabChange, userAvatar }) => {
-  const tabs = [
-    { id: 'play', icon: Home, label: 'Inicio' },
-    { id: 'clubs', icon: Users, label: 'Reservas' },
-    { id: 'matches', icon: Swords, label: 'Competir' },
-    { id: 'competition', icon: Trophy, label: 'Competición' },
-    { id: 'club_dashboard', icon: Store, label: 'Club View' },
-    { id: 'profile', icon: UserCircle, label: 'Perfil' },
-  ];
+export const NavBar: React.FC<NavBarProps> = ({ currentTab, onTabChange, userAvatar, accountType = 'player' }) => {
+  const tabs = accountType === 'club'
+    ? [
+        { id: 'club_dashboard', icon: Store, label: 'Club View' },
+      ]
+    : [
+        { id: 'play', icon: Home, label: 'Inicio' },
+        { id: 'clubs', icon: Users, label: 'Reservas' },
+        { id: 'matches', icon: Swords, label: 'Competir' },
+        { id: 'competition', icon: Trophy, label: 'Competición' },
+        { id: 'profile', icon: UserCircle, label: 'Perfil' },
+      ];
 
   return (
     <div className="fixed bottom-0 left-0 right-0 bg-dark-900/95 backdrop-blur-lg border-t border-dark-700 pb-safe pt-2 px-2 z-50 h-[88px]">

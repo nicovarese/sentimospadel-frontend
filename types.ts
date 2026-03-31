@@ -20,6 +20,10 @@ export interface User {
   backendUserId?: number;
   backendPlayerProfileId?: number;
   email?: string;
+  role?: 'PLAYER' | 'ADMIN';
+  accountType?: 'player' | 'club';
+  managedClubId?: number | null;
+  managedClubName?: string | null;
   name: string;
   avatar: string; // URL
   level: number; // 1.0 to 7.0

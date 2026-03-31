@@ -214,10 +214,38 @@ const toFrontendTournamentMatchStatus = (
   return 'confirmed';
 };
 
-export const buildCreateLeagueTournamentRequest = (
+const buildDynamicAmericanoEntries = (
   tournamentData: any,
-): CreateTournamentRequest => {
-  const entries = (tournamentData.teams ?? [])
+): NonNullable<CreateTournamentRequest['entries']> => {
+  const uniquePlayers = new Map<number, User>();
+
+  (tournamentData.teams ?? []).forEach((team: any) => {
+    (team.players ?? []).forEach((player: User) => {
+      if (typeof player.backendPlayerProfileId === 'number') {
+        uniquePlayers.set(player.backendPlayerProfileId, player);
+      }
+    });
+  });
+
+  if (uniquePlayers.size === 0) {
+    throw new Error('El Americano dinámico necesita jugadores reales con player profile.');
+  }
+
+  return Array.from(uniquePlayers.values()).map(player => ({
+    teamName: player.name,
+    timePreferences: [],
+    members: [{ playerProfileId: player.backendPlayerProfileId as number }],
+  }));
+};
+
+const buildTournamentEntries = (
+  tournamentData: any,
+): NonNullable<CreateTournamentRequest['entries']> => {
+  if (tournamentData?.format === 'americano' && tournamentData?.americanoType === 'dinamico') {
+    return buildDynamicAmericanoEntries(tournamentData);
+  }
+
+  return (tournamentData.teams ?? [])
     .filter((team: any) => Array.isArray(team.players) && team.players.length === 2)
     .map((team: any) => {
       const memberIds = team.players
@@ -234,43 +262,62 @@ export const buildCreateLeagueTournamentRequest = (
         members: memberIds.map(playerProfileId => ({ playerProfileId })),
       };
     });
+};
+
+export const buildCreateBackendTournamentRequest = (
+  tournamentData: any,
+): CreateTournamentRequest => {
+  const backendFormat = tournamentData?.format === 'league'
+    ? 'LEAGUE'
+    : tournamentData?.format === 'tournament'
+      ? 'ELIMINATION'
+      : 'AMERICANO';
 
   return {
     name: (tournamentData.name || 'Torneo Relámpago').trim(),
+    description: tournamentData.rules?.trim() || null,
     clubId: getBackendClubId(tournamentData.clubId) ?? undefined,
     startDate: tournamentData.startDate,
     endDate: tournamentData.endDate || null,
-    format: 'LEAGUE',
+    format: backendFormat,
+    americanoType: backendFormat === 'AMERICANO'
+      ? (tournamentData.americanoType === 'dinamico' ? 'DYNAMIC' : 'FIXED')
+      : null,
     maxEntries: tournamentData.numTeams ?? undefined,
     openEnrollment: true,
     competitive: tournamentData.isCompetitive !== false,
-    leagueRounds: 2,
+    leagueRounds: backendFormat === 'LEAGUE' ? 2 : undefined,
+    matchesPerParticipant: backendFormat === 'AMERICANO'
+      ? (tournamentData.matchesPerParticipant ?? 5)
+      : undefined,
     standingsTiebreak: 'GAMES_DIFFERENCE',
     availableCourts: tournamentData.availableCourts ?? undefined,
     courtNames: (tournamentData.courtNames ?? []).filter((courtName: string) => courtName?.trim()),
-    entries,
+    entries: buildTournamentEntries(tournamentData),
   };
 };
 
 export const buildSyncTournamentEntriesRequest = (tournament: any): SyncTournamentEntriesRequest => ({
-  entries: (tournament.teams ?? [])
-    .filter((team: any) => Array.isArray(team.players) && team.players.length === 2)
-    .map((team: any) => {
-      const members = team.players
-        .map((player: User) => player.backendPlayerProfileId)
-        .filter((playerProfileId: number | undefined): playerProfileId is number => typeof playerProfileId === 'number')
-        .map(playerProfileId => ({ playerProfileId }));
+  entries: tournament?.format === 'americano' && tournament?.americanoType === 'dinamico'
+    ? buildDynamicAmericanoEntries(tournament)
+    : (tournament.teams ?? [])
+      .filter((team: any) => Array.isArray(team.players) && team.players.length === 2)
+      .map((team: any) => {
+        const members = team.players
+          .map((player: User) => player.backendPlayerProfileId)
+          .filter((playerProfileId: number | undefined): playerProfileId is number => typeof playerProfileId === 'number')
+          .map(playerProfileId => ({ playerProfileId }));
 
-      if (members.length !== 2) {
-        throw new Error('Cada equipo debe tener dos jugadores reales antes de sincronizar.');
-      }
+        if (members.length !== 2) {
+          throw new Error('Cada equipo debe tener dos jugadores reales antes de sincronizar.');
+        }
 
-      return {
-        teamName: team.teamName || null,
-        timePreferences: team.preferences ?? [],
-        members,
-      };
-    }),
+        return {
+          teamName: team.teamName || null,
+          timePreferences: team.preferences ?? [],
+          members,
+        };
+      }),
 });
 
 export const buildSubmitTournamentResultRequest = (
@@ -371,7 +418,10 @@ export const toFrontendTournament = (
   clubLookup: Map<number, ClubResponse>,
 ) => {
   const club = response.clubId == null ? null : clubLookup.get(response.clubId) ?? null;
-  const expectedUsers = (response.maxEntries ?? response.currentEntriesCount) * 2;
+  const isBackendAmericanoDinamico = response.format === 'AMERICANO' && response.americanoType === 'DYNAMIC';
+  const expectedUsers = isBackendAmericanoDinamico
+    ? (response.maxEntries ?? response.currentEntriesCount)
+    : (response.maxEntries ?? response.currentEntriesCount) * 2;
   const creatorId = response.createdByPlayerProfileId === currentUser.backendPlayerProfileId
     ? currentUser.id
     : `player-${response.createdByPlayerProfileId}`;
@@ -380,7 +430,9 @@ export const toFrontendTournament = (
   );
   const currentUserStanding = standings?.standings.find(entry =>
     entry.members.some(member => member.playerProfileId === currentUser.backendPlayerProfileId),
-  );
+  ) ?? standings?.groups
+    ?.flatMap(group => group.standings)
+    .find(entry => entry.members.some(member => member.playerProfileId === currentUser.backendPlayerProfileId));
 
   return {
     id: `${BACKEND_TOURNAMENT_ID_PREFIX}${response.id}`,
@@ -406,17 +458,23 @@ export const toFrontendTournament = (
     status: toFrontendTournamentStatus(response, expectedUsers),
     ranking: currentUserStanding ? `#${currentUserStanding.position}` : '-',
     upcomingMatches: matches.filter(match => match.status !== 'completed').length,
-    userTeamName: currentUserEntry ? ` - Equipo: ${currentUserEntry.teamName}` : '',
+    userTeamName: isBackendAmericanoDinamico
+      ? ''
+      : currentUserEntry
+        ? ` - Equipo: ${currentUserEntry.teamName}`
+        : '',
     availableCourts: response.availableCourts,
     courtNames: response.courtNames,
     openEnrollment: response.openEnrollment,
     launchedAt: response.launchedAt,
     backendStatus: response.status,
     leagueRounds: response.leagueRounds,
+    matchesPerParticipant: response.matchesPerParticipant ?? undefined,
     teams: response.entries.map(entry => ({
       id: `backend-tournament-entry-${entry.id}`,
       backendTournamentEntryId: entry.id,
       teamName: entry.teamName,
+      groupLabel: entry.groupLabel,
       preferences: entry.timePreferences,
       players: entry.members.map(member => toFrontendTournamentUser(member, currentUser)),
       status: entry.status,

@@ -98,6 +98,28 @@ export const buildFrontendUser = (
   onboarding: InitialSurveyResponse | null,
   preferredName?: string | null,
 ): User => {
+  if (authUser.role === 'ADMIN') {
+    return {
+      ...baseUser,
+      backendUserId: authUser.id,
+      backendPlayerProfileId: profile?.id,
+      email: authUser.email,
+      role: authUser.role,
+      accountType: 'club',
+      managedClubId: authUser.managedClubId,
+      managedClubName: authUser.managedClubName,
+      name: authUser.managedClubName ?? deriveDisplayName(authUser.email, preferredName, profile?.fullName),
+      level: 0,
+      categoryName: undefined,
+      categoryNumber: undefined,
+      publicCategoryNumber: null,
+      verificationStatus: 'none',
+      isCategoryVerified: false,
+      surveyCompleted: true,
+      matchesPlayed: 0,
+    };
+  }
+
   const rating = profile?.currentRating ?? onboarding?.initialRating ?? 1.0;
   const category = profile?.currentCategory ?? onboarding?.estimatedCategory ?? null;
   const verificationStatus = toFrontendVerificationStatus(
@@ -111,6 +133,10 @@ export const buildFrontendUser = (
     backendUserId: authUser.id,
     backendPlayerProfileId: profile?.id,
     email: authUser.email,
+    role: authUser.role,
+    accountType: 'player',
+    managedClubId: authUser.managedClubId,
+    managedClubName: authUser.managedClubName,
     name: deriveDisplayName(authUser.email, preferredName, profile?.fullName),
     level: Number(rating),
     categoryName,

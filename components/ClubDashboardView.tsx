@@ -1,13 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Calendar, CheckCircle, Settings, TrendingUp, Trophy, Users } from 'lucide-react';
+import { Calendar, CheckCircle, LogOut, Settings, TrendingUp, Trophy, Users } from 'lucide-react';
 import { backendApi, BackendApiError, type ClubManagementDashboardResponse } from '../services/backendApi';
 
 interface ClubDashboardViewProps {
   onOpenClubUsers?: () => void;
   onOpenClubAgenda?: () => void;
+  onLogout?: () => void;
 }
 
-export const ClubDashboardView: React.FC<ClubDashboardViewProps> = ({ onOpenClubUsers, onOpenClubAgenda }) => {
+export const ClubDashboardView: React.FC<ClubDashboardViewProps> = ({ onOpenClubUsers, onOpenClubAgenda, onLogout }) => {
   const [dashboard, setDashboard] = useState<ClubManagementDashboardResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -70,8 +71,21 @@ export const ClubDashboardView: React.FC<ClubDashboardViewProps> = ({ onOpenClub
   return (
     <div className="pb-24 pt-4 px-4 animate-fade-in">
       <header className="mb-6">
-        <h1 className="text-2xl font-bold text-white mb-1">Panel de Club</h1>
-        <p className="text-gray-400 text-sm">{dashboard?.clubName ?? 'Gestion integral de tu sede'}</p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold text-white mb-1">Panel de Club</h1>
+            <p className="text-gray-400 text-sm">{dashboard?.clubName ?? 'Gestion integral de tu sede'}</p>
+          </div>
+          {onLogout && (
+            <button
+              onClick={onLogout}
+              className="shrink-0 bg-dark-800 border border-dark-700 rounded-xl px-3 py-2 text-gray-300 hover:text-white hover:bg-dark-700 transition-colors flex items-center gap-2 text-sm font-bold"
+            >
+              <LogOut size={16} />
+              Salir
+            </button>
+          )}
+        </div>
       </header>
 
       {loading && (
