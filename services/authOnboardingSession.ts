@@ -72,7 +72,7 @@ const deriveDisplayName = (email: string, preferredName?: string | null, profile
     .join(' ');
 };
 
-const toFrontendVerificationStatus = (
+export const toFrontendVerificationStatus = (
   requiresClubVerification: boolean,
   clubVerificationStatus: ClubVerificationStatus,
 ): User['verificationStatus'] => {
@@ -117,6 +117,8 @@ export const buildFrontendUser = (
       isCategoryVerified: false,
       surveyCompleted: true,
       matchesPlayed: 0,
+      isPremium: false,
+      badges: [],
     };
   }
 
@@ -146,5 +148,7 @@ export const buildFrontendUser = (
     isCategoryVerified: verificationStatus === 'verified',
     surveyCompleted: Boolean(profile?.surveyCompleted ?? onboarding),
     matchesPlayed: profile?.matchesPlayed ?? 0,
+    isPremium: false,
+    badges: [],
   };
 };

@@ -1,8 +1,10 @@
 export type AnswerOption = 'A' | 'B' | 'C' | 'D' | 'E';
 export type UruguayCategory = 'PRIMERA' | 'SEGUNDA' | 'TERCERA' | 'CUARTA' | 'QUINTA' | 'SEXTA' | 'SEPTIMA';
 export type ClubVerificationStatus = 'NOT_REQUIRED' | 'PENDING' | 'VERIFIED' | 'REJECTED';
+export type ClubVerificationRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
 export type UserRole = 'PLAYER' | 'ADMIN';
 export type RegisterAccountType = 'PLAYER' | 'CLUB';
+export type LegalDocumentType = 'TERMS_AND_CONDITIONS' | 'PRIVACY_POLICY' | 'CONSENT_PREFERENCES_NOTICE';
 export type MatchStatus = 'OPEN' | 'FULL' | 'CANCELLED' | 'RESULT_PENDING' | 'COMPLETED';
 export type MatchParticipantTeam = 'TEAM_ONE' | 'TEAM_TWO';
 export type MatchResultStatus = 'PENDING' | 'CONFIRMED' | 'REJECTED';
@@ -29,12 +31,37 @@ export interface LoginRequest {
 }
 
 export interface RegisterRequest {
+  fullName?: string | null;
   email: string;
+  phone: string;
   password: string;
   accountType: RegisterAccountType;
   clubName?: string | null;
   clubCity?: string | null;
   clubAddress?: string | null;
+  acceptTerms: boolean;
+  acceptedTermsVersion: string;
+  acceptPrivacyPolicy: boolean;
+  acceptedPrivacyVersion: string;
+  allowActivityTracking?: boolean | null;
+  allowOperationalNotifications?: boolean | null;
+  consentPreferencesVersion: string;
+}
+
+export interface LegalDocumentResponse {
+  type: LegalDocumentType;
+  title: string;
+  version: string;
+  required: boolean;
+  content: string;
+}
+
+export interface ResendEmailVerificationRequest {
+  email: string;
+}
+
+export interface EmailVerificationDispatchResponse {
+  message: string;
 }
 
 export interface LoginResponse {
@@ -200,6 +227,46 @@ export interface PlayerProfileResponse {
   updatedAt: string;
 }
 
+export interface PlayerClubVerificationRequestResponse {
+  id: number;
+  clubId: number;
+  clubName: string;
+  clubCity: string;
+  status: ClubVerificationRequestStatus;
+  requestedAt: string;
+  reviewedAt: string | null;
+  reviewNotes: string | null;
+}
+
+export interface PlayerClubVerificationSummaryResponse {
+  requiresClubVerification: boolean;
+  clubVerificationStatus: ClubVerificationStatus;
+  canCreateRequest: boolean;
+  requests: PlayerClubVerificationRequestResponse[];
+}
+
+export interface CreateClubVerificationRequest {
+  clubId: number;
+}
+
+export interface ClubVerificationDecisionRequest {
+  notes?: string | null;
+}
+
+export interface ClubVerificationManagementRequestResponse {
+  id: number;
+  playerProfileId: number;
+  playerFullName: string;
+  playerPhotoUrl: string | null;
+  playerCity: string | null;
+  currentRating: number;
+  currentCategory: UruguayCategory | null;
+  requestedAt: string;
+  status: ClubVerificationRequestStatus;
+  reviewedAt: string | null;
+  reviewNotes: string | null;
+}
+
 export interface ClubResponse {
   id: number;
   name: string;
@@ -256,11 +323,61 @@ export interface ClubManagementUsersResponse {
   topUsers: ClubManagementTopUserResponse[];
 }
 
+export interface ClubManagementCourtResponse {
+  id: number;
+  name: string;
+  displayOrder: number;
+  hourlyRateUyu: number;
+  active: boolean;
+}
+
+export interface ClubManagementCourtsResponse {
+  clubId: number;
+  clubName: string;
+  activeCourtsCount: number;
+  totalCourtsCount: number;
+  courts: ClubManagementCourtResponse[];
+}
+
+export interface CreateClubCourtRequest {
+  name: string;
+  hourlyRateUyu: number;
+}
+
+export interface UpdateClubCourtRequest {
+  name: string;
+  hourlyRateUyu: number;
+  active: boolean;
+}
+
+export interface ReorderClubCourtsRequest {
+  orderedCourtIds: number[];
+}
+
 export interface ClubManagementAgendaSlotResponse {
   id: string;
   time: string;
   status: ClubAgendaSlotStatus;
   reservedByName: string | null;
+}
+
+export interface ClubBookingSlotResponse {
+  time: string;
+  status: ClubAgendaSlotStatus;
+}
+
+export interface ClubBookingCourtResponse {
+  id: number;
+  name: string;
+  hourlyRateUyu: number;
+  slots: ClubBookingSlotResponse[];
+}
+
+export interface ClubBookingAgendaResponse {
+  clubId: number;
+  clubName: string;
+  date: string;
+  courts: ClubBookingCourtResponse[];
 }
 
 export interface ClubManagementAgendaCourtResponse {
@@ -450,6 +567,7 @@ export interface TournamentResponse {
   americanoType: TournamentAmericanoType | null;
   openEnrollment: boolean;
   competitive: boolean;
+  archived: boolean;
   maxEntries: number | null;
   currentEntriesCount: number;
   currentPlayersCount: number;
@@ -460,6 +578,7 @@ export interface TournamentResponse {
   standingsTiebreak: TournamentStandingsTiebreak;
   courtNames: string[];
   launchedAt: string | null;
+  archivedAt: string | null;
   affectsPlayerRating: boolean;
   generatedMatchesCount: number;
   entries: TournamentEntryResponse[];
@@ -685,6 +804,18 @@ export const backendApi = {
       body: JSON.stringify(request),
     }),
 
+  getLegalDocuments: () =>
+    apiRequest<LegalDocumentResponse[]>('/api/legal/documents', {
+      auth: false,
+    }),
+
+  resendEmailVerification: (request: ResendEmailVerificationRequest) =>
+    apiRequest<EmailVerificationDispatchResponse>('/api/auth/verify-email/resend', {
+      method: 'POST',
+      auth: false,
+      body: JSON.stringify(request),
+    }),
+
   getCurrentUser: () => apiRequest<CurrentUserResponse>('/api/auth/me'),
 
   submitInitialSurvey: (request: InitialSurveyRequest) =>
@@ -711,11 +842,58 @@ export const backendApi = {
       auth: false,
     }),
 
+  getClubBookingAvailability: (clubId: number, date: string) =>
+    apiRequest<ClubBookingAgendaResponse>(`/api/clubs/${clubId}/booking-availability?date=${encodeURIComponent(date)}`, {
+      auth: false,
+    }),
+
   getMyClubManagementDashboard: () =>
     apiRequest<ClubManagementDashboardResponse>('/api/clubs/me/management/dashboard'),
 
   getMyClubManagementUsers: () =>
     apiRequest<ClubManagementUsersResponse>('/api/clubs/me/management/users'),
+
+  getMyClubManagementCourts: () =>
+    apiRequest<ClubManagementCourtsResponse>('/api/clubs/me/management/courts'),
+
+  createMyClubManagementCourt: (request: CreateClubCourtRequest) =>
+    apiRequest<ClubManagementCourtsResponse>('/api/clubs/me/management/courts', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    }),
+
+  updateMyClubManagementCourt: (courtId: number, request: UpdateClubCourtRequest) =>
+    apiRequest<ClubManagementCourtsResponse>(`/api/clubs/me/management/courts/${courtId}`, {
+      method: 'PUT',
+      body: JSON.stringify(request),
+    }),
+
+  reorderMyClubManagementCourts: (request: ReorderClubCourtsRequest) =>
+    apiRequest<ClubManagementCourtsResponse>('/api/clubs/me/management/courts/reorder', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    }),
+
+  getMyClubVerificationRequests: () =>
+    apiRequest<ClubVerificationManagementRequestResponse[]>('/api/clubs/me/management/verification-requests'),
+
+  approveMyClubVerificationRequest: (
+    requestId: number,
+    request: ClubVerificationDecisionRequest = {},
+  ) =>
+    apiRequest<ClubVerificationManagementRequestResponse>(`/api/clubs/me/management/verification-requests/${requestId}/approve`, {
+      method: 'POST',
+      body: JSON.stringify(request),
+    }),
+
+  rejectMyClubVerificationRequest: (
+    requestId: number,
+    request: ClubVerificationDecisionRequest = {},
+  ) =>
+    apiRequest<ClubVerificationManagementRequestResponse>(`/api/clubs/me/management/verification-requests/${requestId}/reject`, {
+      method: 'POST',
+      body: JSON.stringify(request),
+    }),
 
   getMyClubManagementAgenda: (date: string) =>
     apiRequest<ClubManagementAgendaResponse>(`/api/clubs/me/management/agenda?date=${encodeURIComponent(date)}`),
@@ -739,6 +917,15 @@ export const backendApi = {
 
   getMyPlayerProfile: () =>
     apiRequest<PlayerProfileResponse>('/api/players/me'),
+
+  getMyClubVerification: () =>
+    apiRequest<PlayerClubVerificationSummaryResponse>('/api/players/me/club-verification'),
+
+  requestMyClubVerification: (request: CreateClubVerificationRequest) =>
+    apiRequest<PlayerClubVerificationSummaryResponse>('/api/players/me/club-verification/request', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    }),
 
   getMyRatingHistory: () =>
     apiRequest<RatingHistoryEntryResponse[]>('/api/players/me/rating-history'),
@@ -873,6 +1060,11 @@ export const backendApi = {
     apiRequest<TournamentResponse>(`/api/tournaments/${tournamentId}/launch`, {
       method: 'POST',
       body: JSON.stringify(request),
+    }),
+
+  archiveTournament: (tournamentId: number) =>
+    apiRequest<TournamentResponse>(`/api/tournaments/${tournamentId}/archive`, {
+      method: 'POST',
     }),
 
   getTournamentMatches: (tournamentId: number) =>

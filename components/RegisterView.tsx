@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
-import { Trophy, User, Mail, Lock, Phone, ChevronRight, ArrowLeft, Sparkles, Store } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Trophy, User, Mail, Lock, Phone, ChevronRight, ArrowLeft, Sparkles, Store, ShieldCheck, Bell, Activity } from 'lucide-react';
 import { Button } from './Button';
+import { backendApi, BackendApiError, type LegalDocumentResponse, type LegalDocumentType } from '../services/backendApi';
+import { LegalDocumentModal } from './LegalDocumentModal';
 
 type AuthAccountMode = 'player' | 'club';
 
@@ -20,11 +22,70 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ onBack, onRegister, 
     phone: '',
     clubCity: '',
     clubAddress: '',
+    acceptTerms: false,
+    acceptPrivacyPolicy: false,
+    allowActivityTracking: false,
+    allowOperationalNotifications: false,
   });
+  const [legalDocuments, setLegalDocuments] = useState<LegalDocumentResponse[]>([]);
+  const [legalLoading, setLegalLoading] = useState(true);
+  const [legalError, setLegalError] = useState<string | null>(null);
+  const [activeDocumentType, setActiveDocumentType] = useState<LegalDocumentType | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    backendApi.getLegalDocuments()
+      .then(documents => {
+        if (!cancelled) {
+          setLegalDocuments(documents);
+          setLegalError(null);
+        }
+      })
+      .catch(error => {
+        if (cancelled) {
+          return;
+        }
+
+        const message = error instanceof BackendApiError && error.message
+          ? error.message
+          : 'No se pudieron cargar los documentos legales vigentes.';
+        setLegalError(message);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLegalLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const documentsByType = useMemo(() => {
+    return new Map(legalDocuments.map(document => [document.type, document]));
+  }, [legalDocuments]);
+
+  const activeDocument = activeDocumentType ? documentsByType.get(activeDocumentType) ?? null : null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onRegister(formData);
+    const termsDocument = documentsByType.get('TERMS_AND_CONDITIONS');
+    const privacyDocument = documentsByType.get('PRIVACY_POLICY');
+    const consentDocument = documentsByType.get('CONSENT_PREFERENCES_NOTICE');
+
+    if (!termsDocument || !privacyDocument || !consentDocument) {
+      setLegalError('No se pudieron resolver las versiones legales vigentes. Reintentá en unos segundos.');
+      return;
+    }
+
+    onRegister({
+      ...formData,
+      acceptedTermsVersion: termsDocument.version,
+      acceptedPrivacyVersion: privacyDocument.version,
+      consentPreferencesVersion: consentDocument.version,
+    });
   };
 
   return (
@@ -132,18 +193,17 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ onBack, onRegister, 
               />
             </div>
 
-            {accountMode === 'player' && (
               <div className="relative group">
                 <Phone className="absolute left-3 top-3.5 text-gray-500 group-focus-within:text-padel-400 transition-colors" size={20} />
                 <input 
                   type="tel" 
-                  placeholder="Teléfono (Opcional)" 
+                  placeholder="Teléfono" 
                   className="w-full bg-dark-900/50 border border-dark-600 text-white pl-10 pr-4 py-3 rounded-xl focus:outline-none focus:border-padel-500 transition-all"
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  required
                 />
               </div>
-            )}
 
             <div className="relative group">
               <Lock className="absolute left-3 top-3.5 text-gray-500 group-focus-within:text-padel-400 transition-colors" size={20} />
@@ -157,10 +217,95 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ onBack, onRegister, 
               />
             </div>
 
-            <Button type="submit" fullWidth className="mt-4 font-bold text-lg shadow-xl shadow-padel-500/10">
+            <div className="bg-dark-900/50 border border-dark-600 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <ShieldCheck size={16} className="text-padel-400" />
+                <p className="text-white text-sm font-bold">Consentimientos y aprobaciones</p>
+              </div>
+
+              {legalLoading && (
+                <p className="text-xs text-gray-400">Cargando documentos legales vigentes...</p>
+              )}
+
+              {legalError && (
+                <p className="text-xs text-red-300">{legalError}</p>
+              )}
+
+              {!legalLoading && !legalError && (
+                <>
+                  <label className="flex items-start gap-3 text-sm text-gray-300">
+                    <input
+                      type="checkbox"
+                      className="mt-1 h-4 w-4 rounded border-dark-500 bg-dark-900 text-padel-500"
+                      checked={formData.acceptTerms}
+                      onChange={event => setFormData({ ...formData, acceptTerms: event.target.checked })}
+                      required
+                    />
+                    <span>
+                      Acepto los <button type="button" onClick={() => setActiveDocumentType('TERMS_AND_CONDITIONS')} className="text-padel-400 font-bold hover:underline">Términos y Condiciones</button>.
+                    </span>
+                  </label>
+
+                  <label className="flex items-start gap-3 text-sm text-gray-300">
+                    <input
+                      type="checkbox"
+                      className="mt-1 h-4 w-4 rounded border-dark-500 bg-dark-900 text-padel-500"
+                      checked={formData.acceptPrivacyPolicy}
+                      onChange={event => setFormData({ ...formData, acceptPrivacyPolicy: event.target.checked })}
+                      required
+                    />
+                    <span>
+                      Acepto la <button type="button" onClick={() => setActiveDocumentType('PRIVACY_POLICY')} className="text-padel-400 font-bold hover:underline">Política de Privacidad y Tratamiento de Datos</button>.
+                    </span>
+                  </label>
+
+                  <label className="flex items-start gap-3 text-sm text-gray-300">
+                    <input
+                      type="checkbox"
+                      className="mt-1 h-4 w-4 rounded border-dark-500 bg-dark-900 text-padel-500"
+                      checked={formData.allowActivityTracking}
+                      onChange={event => setFormData({ ...formData, allowActivityTracking: event.target.checked })}
+                    />
+                    <span className="flex-1">
+                      <span className="flex items-center gap-2 text-white font-medium">
+                        <Activity size={14} className="text-gray-400" />
+                        Autorizo tracking de actividad para mejorar la app.
+                      </span>
+                      <button type="button" onClick={() => setActiveDocumentType('CONSENT_PREFERENCES_NOTICE')} className="text-padel-400 text-xs font-bold hover:underline mt-1">
+                        Ver alcance de este consentimiento
+                      </button>
+                    </span>
+                  </label>
+
+                  <label className="flex items-start gap-3 text-sm text-gray-300">
+                    <input
+                      type="checkbox"
+                      className="mt-1 h-4 w-4 rounded border-dark-500 bg-dark-900 text-padel-500"
+                      checked={formData.allowOperationalNotifications}
+                      onChange={event => setFormData({ ...formData, allowOperationalNotifications: event.target.checked })}
+                    />
+                    <span className="flex-1">
+                      <span className="flex items-center gap-2 text-white font-medium">
+                        <Bell size={14} className="text-gray-400" />
+                        Autorizo notificaciones operativas y recordatorios del sistema.
+                      </span>
+                      <button type="button" onClick={() => setActiveDocumentType('CONSENT_PREFERENCES_NOTICE')} className="text-padel-400 text-xs font-bold hover:underline mt-1">
+                        Ver canales y alcance
+                      </button>
+                    </span>
+                  </label>
+                </>
+              )}
+            </div>
+
+            <Button type="submit" fullWidth disabled={legalLoading || Boolean(legalError)} className="mt-4 font-bold text-lg shadow-xl shadow-padel-500/10">
               Registrarse
             </Button>
           </form>
+
+          <p className="mt-4 text-[11px] text-gray-400 leading-relaxed">
+            Te vamos a enviar un link al correo para confirmar que es tu email antes del primer ingreso.
+          </p>
 
           {accountMode === 'player' && (
             <div className="mt-8 pt-6 border-t border-white/5">
@@ -189,6 +334,13 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ onBack, onRegister, 
           ¿Ya tienes cuenta? <button onClick={onBack} className="text-white font-bold hover:underline">Inicia sesión</button>
         </p>
       </div>
+
+      {activeDocument && (
+        <LegalDocumentModal
+          document={activeDocument}
+          onClose={() => setActiveDocumentType(null)}
+        />
+      )}
     </div>
   );
 };

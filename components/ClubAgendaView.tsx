@@ -179,7 +179,7 @@ export const ClubAgendaView: React.FC<ClubAgendaViewProps> = ({ onClose }) => {
         <div className="p-4 bg-dark-800/50 border-b border-dark-800">
           <div className="flex items-center gap-2 mb-3">
             <Zap size={16} className="text-yellow-500" />
-            <h3 className="text-white font-bold text-sm">Acción Rápida</h3>
+            <h3 className="text-white font-bold text-sm">Registro Operativo</h3>
           </div>
           <div className="grid grid-cols-3 gap-2">
             <button
@@ -187,21 +187,21 @@ export const ClubAgendaView: React.FC<ClubAgendaViewProps> = ({ onClose }) => {
               className="bg-dark-800 hover:bg-dark-700 p-3 rounded-xl border border-dark-700 flex flex-col items-center gap-2 transition-colors"
             >
               <Bell size={18} className="text-blue-400" />
-              <span className="text-[10px] font-bold text-gray-300 text-center leading-tight">Notificar<br />Usuarios</span>
+              <span className="text-[10px] font-bold text-gray-300 text-center leading-tight">Registrar<br />Aviso</span>
             </button>
             <button
               onClick={() => void handleQuickAction('ACTIVATE_RESERVATION_PROMO')}
               className="bg-dark-800 hover:bg-dark-700 p-3 rounded-xl border border-dark-700 flex flex-col items-center gap-2 transition-colors"
             >
               <Tag size={18} className="text-padel-400" />
-              <span className="text-[10px] font-bold text-gray-300 text-center leading-tight">Promo en<br />Reserva</span>
+              <span className="text-[10px] font-bold text-gray-300 text-center leading-tight">Registrar<br />Promo</span>
             </button>
             <button
               onClick={() => void handleQuickAction('ACTIVATE_LAST_MINUTE_DISCOUNT')}
               className="bg-dark-800 hover:bg-dark-700 p-3 rounded-xl border border-dark-700 flex flex-col items-center gap-2 transition-colors"
             >
               <Percent size={18} className="text-red-400" />
-              <span className="text-[10px] font-bold text-gray-300 text-center leading-tight">50% OFF<br />Prox 30m</span>
+              <span className="text-[10px] font-bold text-gray-300 text-center leading-tight">Registrar<br />Descuento</span>
             </button>
           </div>
         </div>
@@ -321,3 +321,5 @@ export const ClubAgendaView: React.FC<ClubAgendaViewProps> = ({ onClose }) => {
     </div>
   );
 };
+
+

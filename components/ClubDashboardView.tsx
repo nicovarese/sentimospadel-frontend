@@ -1,14 +1,22 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Calendar, CheckCircle, LogOut, Settings, TrendingUp, Trophy, Users } from 'lucide-react';
+import { Calendar, CheckCircle, Grid, LogOut, ShieldCheck, TrendingUp, Users } from 'lucide-react';
 import { backendApi, BackendApiError, type ClubManagementDashboardResponse } from '../services/backendApi';
 
 interface ClubDashboardViewProps {
   onOpenClubUsers?: () => void;
   onOpenClubAgenda?: () => void;
+  onOpenClubCourts?: () => void;
+  onOpenClubVerification?: () => void;
   onLogout?: () => void;
 }
 
-export const ClubDashboardView: React.FC<ClubDashboardViewProps> = ({ onOpenClubUsers, onOpenClubAgenda, onLogout }) => {
+export const ClubDashboardView: React.FC<ClubDashboardViewProps> = ({
+  onOpenClubUsers,
+  onOpenClubAgenda,
+  onOpenClubCourts,
+  onOpenClubVerification,
+  onLogout,
+}) => {
   const [dashboard, setDashboard] = useState<ClubManagementDashboardResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -111,7 +119,7 @@ export const ClubDashboardView: React.FC<ClubDashboardViewProps> = ({ onOpenClub
                 {dashboard.activeCourtsCount}/{dashboard.totalCourtsCount}
               </h2>
               <span className="text-green-400 text-xs font-bold flex items-center gap-1 mt-1">
-                <TrendingUp size={12} /> Operativas hoy
+                <TrendingUp size={12} /> Activas / total configuradas
               </span>
             </div>
             <div className="bg-dark-800 p-4 rounded-xl border border-dark-700">
@@ -139,13 +147,19 @@ export const ClubDashboardView: React.FC<ClubDashboardViewProps> = ({ onOpenClub
               <Users size={24} className="text-blue-400" />
               <span className="text-gray-200 text-xs font-bold">Usuarios</span>
             </button>
-            <button className="bg-dark-800 p-4 rounded-xl border border-dark-700 flex flex-col items-center justify-center gap-2 hover:bg-dark-700 transition-colors">
-              <Trophy size={24} className="text-amber-400" />
-              <span className="text-gray-200 text-xs font-bold">Torneos</span>
+            <button
+              onClick={() => onOpenClubCourts && onOpenClubCourts()}
+              className="bg-dark-800 p-4 rounded-xl border border-dark-700 flex flex-col items-center justify-center gap-2 hover:bg-dark-700 transition-colors"
+            >
+              <Grid size={24} className="text-amber-400" />
+              <span className="text-gray-200 text-xs font-bold">Canchas</span>
             </button>
-            <button className="bg-dark-800 p-4 rounded-xl border border-dark-700 flex flex-col items-center justify-center gap-2 hover:bg-dark-700 transition-colors">
-              <Settings size={24} className="text-gray-400" />
-              <span className="text-gray-200 text-xs font-bold">Config</span>
+            <button
+              onClick={() => onOpenClubVerification && onOpenClubVerification()}
+              className="bg-dark-800 p-4 rounded-xl border border-dark-700 flex flex-col items-center justify-center gap-2 hover:bg-dark-700 transition-colors"
+            >
+              <ShieldCheck size={24} className="text-green-400" />
+              <span className="text-gray-200 text-xs font-bold">Verificaciones</span>
             </button>
           </div>
 

@@ -14,38 +14,6 @@ import type {
 const DEFAULT_BACKEND_PLAYER_RATING = 3.5;
 const BACKEND_TOURNAMENT_ID_PREFIX = 'backend-tournament-';
 const BACKEND_CLUB_ID_PREFIX = 'backend-club-';
-const SEEDED_CLUB_DISPLAY_METADATA: Record<string, Pick<Club, 'rating' | 'image' | 'courtsAvailable' | 'isPremium'>> = {
-  'Top Padel': {
-    rating: 5.0,
-    image: 'https://picsum.photos/400/200?random=1',
-    courtsAvailable: 8,
-    isPremium: true,
-  },
-  'World Padel': {
-    rating: 4.6,
-    image: 'https://picsum.photos/400/200?random=2',
-    courtsAvailable: 6,
-    isPremium: true,
-  },
-  'Cordon Padel': {
-    rating: 4.4,
-    image: 'https://picsum.photos/400/200?random=3',
-    courtsAvailable: 4,
-    isPremium: false,
-  },
-  Boss: {
-    rating: 4.7,
-    image: 'https://picsum.photos/400/200?random=4',
-    courtsAvailable: 5,
-    isPremium: false,
-  },
-  Reducto: {
-    rating: 4.3,
-    image: 'https://picsum.photos/400/200?random=5',
-    courtsAvailable: 3,
-    isPremium: false,
-  },
-};
 
 const toAvatarUrl = (playerProfileId: number): string =>
   `https://picsum.photos/seed/backend-player-${playerProfileId}/100/100`;
@@ -92,19 +60,16 @@ const toFrontendTournamentUser = (
 };
 
 export const buildTournamentClubOptions = (clubs: ClubResponse[]): Club[] =>
-  clubs.map(club => {
-    const displayMetadata = SEEDED_CLUB_DISPLAY_METADATA[club.name];
-
-    return {
-      id: `${BACKEND_CLUB_ID_PREFIX}${club.id}`,
-      name: club.name,
-      location: club.address || club.city,
-      rating: displayMetadata?.rating ?? 4.5,
-      image: displayMetadata?.image ?? `https://picsum.photos/seed/backend-club-${club.id}/400/200`,
-      courtsAvailable: displayMetadata?.courtsAvailable ?? 4,
-      isPremium: displayMetadata?.isPremium ?? club.integrated,
-    };
-  });
+  clubs.map(club => ({
+    id: `${BACKEND_CLUB_ID_PREFIX}${club.id}`,
+    name: club.name,
+    location: club.address || club.city,
+    rating: 0,
+    image: '',
+    courtsAvailable: 0,
+    isPremium: false,
+    isIntegrated: club.integrated,
+  }));
 
 export const buildTournamentSelectablePlayers = (
   profiles: PlayerProfileResponse[],
@@ -452,6 +417,7 @@ export const toFrontendTournament = (
     format: toFrontendTournamentFormat(response),
     americanoType: response.americanoType === 'DYNAMIC' ? 'dinamico' : 'fijo',
     isCompetitive: response.competitive,
+    isArchived: response.archived,
     numTeams: response.maxEntries ?? response.currentEntriesCount,
     expectedUsers,
     registeredUsers: response.currentPlayersCount,
@@ -467,6 +433,7 @@ export const toFrontendTournament = (
     courtNames: response.courtNames,
     openEnrollment: response.openEnrollment,
     launchedAt: response.launchedAt,
+    archivedAt: response.archivedAt,
     backendStatus: response.status,
     leagueRounds: response.leagueRounds,
     matchesPerParticipant: response.matchesPerParticipant ?? undefined,

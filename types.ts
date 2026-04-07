@@ -49,6 +49,7 @@ export interface Club {
   image: string;
   courtsAvailable: number;
   isPremium: boolean;
+  isIntegrated?: boolean;
 }
 
 export interface Match {

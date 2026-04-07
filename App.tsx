@@ -11,10 +11,14 @@ import { CoachesView } from './components/CoachesView';
 import { ClubDashboardView as ClubDashboardBackendView } from './components/ClubDashboardView';
 import { ClubUsersView } from './components/ClubUsersView';
 import { ClubAgendaView } from './components/ClubAgendaView';
+import { ClubCourtsView } from './components/ClubCourtsView';
+import { ClubsBookingView } from './components/ClubsBookingView';
+import { ClubVerificationRequestsView } from './components/ClubVerificationRequestsView';
+import { PlayerClubVerificationView } from './components/PlayerClubVerificationView';
 import { PublicProfileView } from './components/PublicProfileView';
 import { computeMatchRatingUpdatesElo, EloMatchInput } from './utils/eloCalculator';
 import { ACCESS_TOKEN_STORAGE_KEY, backendApi, BackendApiError, clearAccessToken, storeAccessToken, type MyMatchesScope, type NotificationResponse, type PendingActionResponse } from './services/backendApi';
-import { buildFrontendUser, clearStoredDisplayName, isNotFoundError, readStoredDisplayName, storeDisplayName } from './services/authOnboardingSession';
+import { buildFrontendUser, clearStoredDisplayName, isNotFoundError, readStoredDisplayName, storeDisplayName, toFrontendVerificationStatus } from './services/authOnboardingSession';
 import { buildAutoTeamAssignments, buildClubLookup, buildSubmitResultRequest, combineFrontendMatchDateTime, isBackendManagedMatch, isBackendMatchCreator, mapScopedPlayerMatches, mergeBackendMatches } from './services/matchBackendIntegration';
 import { buildActionableResultMatches, buildActionableResultMatchesById, getUnreadNotificationsCount } from './services/pendingActionIntegration';
 import { formatCategoryBadge, formatClubRankingPrimaryValue, getFavoriteClubRanking, getTopPartner, getTopRival, resolveProfileAvatar } from './services/profileInsightsIntegration';
@@ -33,7 +37,7 @@ import {
     toFrontendTournament,
     toFrontendTournamentMatches,
 } from './services/tournamentBackendIntegration';
-import { Plus, Search, Filter, Trophy, Star, TrendingUp, Calendar, MapPin, ChevronRight, ChevronDown, ChevronLeft, BarChart3, Settings, Users, Zap, GraduationCap, Swords, Clock, CheckCircle, AlertCircle, AlertTriangle, CalendarRange, Sparkles, Bell, BadgeCheck, Lock, TrendingDown, Heart, ArrowLeft, Info, Check, Share2, Wallet, UserPlus, Grid, X, Crown, BrainCircuit, Medal, Handshake, Skull, List, Gift, Network, Link, Copy, Trash2, Store, DollarSign, Archive, ShieldCheck } from 'lucide-react';
+import { Plus, Search, Filter, Trophy, Star, TrendingUp, Calendar, MapPin, ChevronRight, ChevronDown, ChevronLeft, BarChart3, Settings, Users, Zap, GraduationCap, Swords, Clock, CheckCircle, AlertCircle, AlertTriangle, CalendarRange, Sparkles, Bell, BadgeCheck, Lock, TrendingDown, ArrowLeft, Info, Check, Share2, Wallet, UserPlus, Grid, X, Crown, BrainCircuit, Medal, Handshake, Skull, List, Gift, Network, Link, Copy, Trash2, Store, DollarSign, Archive, ShieldCheck } from 'lucide-react';
 import { LineChart, Line, XAxis, Tooltip, ResponsiveContainer, YAxis, CartesianGrid, LabelList } from 'recharts';
 
 // --- MOCK DATA ---
@@ -54,7 +58,7 @@ const MOCK_USER: User = {
   matchesPlayed: 42,
   reputation: 98,
   clubAffiliation: 'c1',
-  isPremium: true // Set to true to test filters, false to test locks
+  isPremium: false
 };
 
 const MOCK_FRIENDS = [
@@ -424,6 +428,26 @@ const getCategory = (level: number) => {
     return "7ª";
 }
 
+const CLUB_VISUAL_GRADIENTS = [
+    'from-padel-700/80 via-padel-900/70 to-dark-900',
+    'from-blue-700/80 via-blue-900/70 to-dark-900',
+    'from-emerald-700/80 via-emerald-900/70 to-dark-900',
+    'from-amber-700/80 via-amber-900/60 to-dark-900',
+    'from-rose-700/80 via-rose-900/60 to-dark-900',
+];
+
+const getClubVisualGradient = (clubName: string) => {
+    const seed = Array.from(clubName).reduce((total, char) => total + char.charCodeAt(0), 0);
+    return CLUB_VISUAL_GRADIENTS[seed % CLUB_VISUAL_GRADIENTS.length];
+};
+
+const getClubInitials = (clubName: string) =>
+    clubName
+        .split(/\s+/)
+        .slice(0, 2)
+        .map(word => word.charAt(0).toUpperCase())
+        .join('') || 'CL';
+
 // --- VIEWS ---
 
 interface ViewProps {
@@ -457,13 +481,15 @@ interface ViewProps {
     onOpenClubRankings?: () => void;
     onOpenTopPartners?: () => void;
     onOpenTopRivals?: () => void;
-    onPremiumFeatureAttempt?: (feature: string) => void;
     onCreateTournament?: () => void;
     onOpenClubUsers?: () => void;
     onOpenClubAgenda?: () => void;
+    onOpenClubCourts?: () => void;
+    onOpenClubVerification?: () => void;
     onUserClick?: (user: User) => void;
     onOpenNationalRanking?: () => void;
     onOpenMatchHistory?: () => void;
+    onOpenPlayerClubVerification?: () => void;
     onLaunchTournament?: (tournament: any) => void;
     onOpenTournamentStatus?: (tournament: any) => void;
     onAddTeamsToTournament?: (tournament: any) => void;
@@ -2512,7 +2538,7 @@ const CreateTournamentView: React.FC<{ currentUser: User, selectablePlayers?: Us
                             onClick={() => setIsCompetitive(true)}
                             className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${isCompetitive ? 'bg-amber-500 text-dark-900 shadow' : 'text-gray-400'}`}
                         >
-                            <Medal size={14} /> Por los puntos
+                            <Medal size={14} /> Competitivo
                         </button>
                         <button 
                             onClick={() => setIsCompetitive(false)}
@@ -2524,7 +2550,7 @@ const CreateTournamentView: React.FC<{ currentUser: User, selectablePlayers?: Us
                     <div className="flex gap-2 p-2 bg-dark-800/50 rounded-lg border border-dark-700">
                         <Info size={14} className="text-gray-400 shrink-0 mt-0.5" />
                         <p className="text-[10px] text-gray-400 leading-relaxed">
-                            Elige <span className="text-white font-bold">Por los puntos</span>, si quieres que los resultados de los partidos de este torneo afecten tu rating, o por el contrario, elige <span className="text-white font-bold">recreativo</span> si no quieres que afecten tu rating.
+                            Elige <span className="text-white font-bold">Competitivo</span> para identificar un torneo orientado al resultado o <span className="text-white font-bold">recreativo</span> para uno casual. Los torneos actuales no modifican el rating oficial de los jugadores.
                         </p>
                     </div>
                 </div>
@@ -2550,8 +2576,23 @@ const CreateTournamentView: React.FC<{ currentUser: User, selectablePlayers?: Us
                                 }`}
                             >
                                 <div className="h-16 relative">
-                                    <img src={club.image} className="w-full h-full object-cover" />
-                                    <div className="absolute inset-0 bg-gradient-to-t from-dark-900 to-transparent"></div>
+                                    {club.image ? (
+                                        <>
+                                            <img src={club.image} alt={club.name} className="w-full h-full object-cover" />
+                                            <div className="absolute inset-0 bg-gradient-to-t from-dark-900 to-transparent"></div>
+                                        </>
+                                    ) : (
+                                        <div className={`w-full h-full bg-gradient-to-br ${getClubVisualGradient(club.name)} flex items-center justify-between px-3`}>
+                                            <span className="text-white/95 font-black text-lg tracking-wide">
+                                                {getClubInitials(club.name)}
+                                            </span>
+                                            {club.isIntegrated && (
+                                                <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-white/80">
+                                                    Integrado
+                                                </span>
+                                            )}
+                                        </div>
+                                    )}
                                     {selectedClub === club.id && (
                                         <div className="absolute inset-0 bg-padel-500/20 flex items-center justify-center">
                                             <CheckCircle size={20} className="text-padel-500 bg-white rounded-full" fill="currentColor" />
@@ -4765,7 +4806,7 @@ const CompetitionView: React.FC<ViewProps> = ({
                 title: tournament.title || tournament.name,
                 date: tournament.date || tournament.dateString || 'Proximamente',
                 location: tournament.location || tournament.clubName || 'Sede por definir',
-                prizes: tournament.prizes || (tournament.isCompetitive === false ? 'Liga Recreativa' : 'Por los puntos'),
+                prizes: tournament.prizes || (tournament.isCompetitive === false ? 'Recreativo' : 'Competitivo'),
                 participants: tournament.participants || (expectedTeams > 0
                     ? `${currentTeams}/${expectedTeams} equipos`
                     : `${currentTeams} equipos`),
@@ -4875,12 +4916,12 @@ const CompetitionView: React.FC<ViewProps> = ({
                  <div className="mt-4 pt-4 border-t border-dark-700">
                     <p className="text-xs text-gray-400 flex items-center gap-1">
                         <TrendingUp size={14} className="text-green-500" /> 
-                        Has subido <span className="text-white font-bold">+35 puntos</span> este mes
+                        Tu rating oficial se actualiza desde resultados confirmados en backend
                     </p>
                 </div>
             </div>
 
-            {/* Create Tournament CTA - Premium Feature */}
+            {/* Create Tournament CTA */}
             <div className="relative overflow-hidden rounded-2xl border border-amber-500/30 bg-gradient-to-br from-amber-900/20 via-dark-800 to-dark-800 p-1 mb-6 group">
                 {/* Background Glow */}
                 <div className="absolute top-0 right-0 -mt-4 -mr-4 w-24 h-24 bg-amber-500/20 rounded-full blur-2xl group-hover:bg-amber-500/30 transition-colors"></div>
@@ -4888,18 +4929,15 @@ const CompetitionView: React.FC<ViewProps> = ({
                 <div className="relative bg-dark-900/40 backdrop-blur-sm rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center gap-4">
                     {/* Icon Box */}
                     <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-lg shadow-amber-500/20 shrink-0">
-                        <Crown size={24} className="text-white" fill="currentColor" />
+                        <Trophy size={24} className="text-white" />
                     </div>
 
                     <div className="flex-1">
                         <div className="flex items-center gap-2 mb-1">
                             <h3 className="text-white font-bold text-base">Crea tu propio Torneo</h3>
-                            <span className="bg-amber-500 text-dark-900 text-[9px] font-black px-1.5 py-0.5 rounded uppercase tracking-wide">
-                                PRO
-                            </span>
                         </div>
                         <p className="text-gray-400 text-xs leading-relaxed mb-3 sm:mb-0">
-                            Organiza tu propio torneo, fija tus reglas, premios y diviértete con tus amigos.
+                            Organiza tu torneo, define sede, formato y participantes desde el flujo real conectado al backend.
                         </p>
                     </div>
 
@@ -4937,7 +4975,7 @@ const CompetitionView: React.FC<ViewProps> = ({
                     const theme = getTournamentTheme(tournament);
                     const currentTeams = Array.isArray(tournament.teams) ? tournament.teams.length : 0;
                     const expectedTeams = tournament.numTeams || currentTeams;
-                    const competitionLabel = tournament.isCompetitive === false ? 'Liga Recreativa' : 'Por los puntos';
+                    const competitionLabel = tournament.isCompetitive === false ? 'Recreativo' : 'Competitivo';
                     const participantsLabel = expectedTeams > 0
                         ? `${currentTeams}/${expectedTeams} equipos`
                         : `${currentTeams} equipos`;
@@ -4972,7 +5010,7 @@ const CompetitionView: React.FC<ViewProps> = ({
     )
 }
 
-const ClubsView: React.FC<ViewProps> = ({ currentUser, clubs = [], onBook }) => {
+export const ClubsViewLegacy: React.FC<ViewProps> = ({ currentUser, clubs = [], onBook }) => {
     // ... (No changes here, keeping existing code)
     const [selectedClub, setSelectedClub] = useState<Club | null>(null);
     const [bookingStep, setBookingStep] = useState<'time' | 'config'>('time');
@@ -5329,23 +5367,22 @@ const ClubsView: React.FC<ViewProps> = ({ currentUser, clubs = [], onBook }) => 
 
                 {clubs.map(club => (
                     <div key={club.id} className="bg-dark-800 rounded-2xl overflow-hidden border border-dark-700 group relative">
-                         {/* Favorite Indicator for Top Padel */}
-                        {club.name === 'Top Padel' && (
-                            <div className="absolute top-2 right-2 z-10 bg-white/20 backdrop-blur-md p-1.5 rounded-full text-red-500 shadow-lg">
-                                 <Heart size={14} fill="currentColor" />
-                            </div>
-                        )}
-
                         <div className="h-28 bg-gray-700 relative">
-                            <img src={club.image} alt={club.name} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
-                            {club.isPremium && (
-                                <div className="absolute top-2 left-2 bg-dark-900/80 backdrop-blur-sm text-padel-400 text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1">
-                                    <Star size={8} fill="currentColor" /> PREMIUM
+                            {club.image ? (
+                                <img src={club.image} alt={club.name} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
+                            ) : (
+                                <div className={`w-full h-full bg-gradient-to-br ${getClubVisualGradient(club.name)} flex items-end justify-between px-4 py-3`}>
+                                    <div>
+                                        <div className="text-white/80 text-[10px] font-bold uppercase tracking-[0.24em]">Club</div>
+                                        <div className="text-white font-black text-2xl leading-none">{getClubInitials(club.name)}</div>
+                                    </div>
+                                    {club.isIntegrated && (
+                                        <div className="bg-white/10 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-1 rounded-full border border-white/15 uppercase tracking-wide">
+                                            Integrado
+                                        </div>
+                                    )}
                                 </div>
                             )}
-                            <div className="absolute bottom-2 right-2 bg-white text-dark-900 text-[10px] font-bold px-1.5 py-0.5 rounded">
-                                {club.rating} ★
-                            </div>
                         </div>
                         <div className="p-3">
                             <h3 className="text-white font-bold text-base mb-0.5">{club.name}</h3>
@@ -5366,7 +5403,22 @@ const ClubsView: React.FC<ViewProps> = ({ currentUser, clubs = [], onBook }) => 
     )
 }
 
-const ProfileView: React.FC<ViewProps> = ({ currentUser, rankingPosition, ratingHistory = [], topPartners = [], topRivals = [], clubRankings = [], matches = [], onOpenClubRankings, onOpenTopPartners, onOpenTopRivals, onPremiumFeatureAttempt, onUserClick, onOpenNationalRanking, onOpenMatchHistory }) => {
+const ProfileView: React.FC<ViewProps> = ({
+    currentUser,
+    rankingPosition,
+    ratingHistory = [],
+    topPartners = [],
+    topRivals = [],
+    clubRankings = [],
+    matches = [],
+    onOpenClubRankings,
+    onOpenTopPartners,
+    onOpenTopRivals,
+    onUserClick,
+    onOpenNationalRanking,
+    onOpenMatchHistory,
+    onOpenPlayerClubVerification,
+}) => {
     // State for Filter
     const [timeRange, setTimeRange] = useState<'LAST_10' | '1M' | '3M' | '6M' | '1Y' | 'ALL'>('LAST_10');
 
@@ -5494,26 +5546,16 @@ const ProfileView: React.FC<ViewProps> = ({ currentUser, rankingPosition, rating
     };
 
     const handleFilterChange = (range: typeof timeRange) => {
-        if (range === 'LAST_10') {
-            setTimeRange(range);
-            return;
-        }
-        
-        if (currentUser.isPremium) {
-            setTimeRange(range);
-        } else {
-            // Trigger Notification via callback or simple alert for now
-            if (onPremiumFeatureAttempt) onPremiumFeatureAttempt('Filtros de Historial');
-        }
+        setTimeRange(range);
     };
 
     const filters = [
-        { label: '10P', value: 'LAST_10', premium: false },
-        { label: '1M', value: '1M', premium: true },
-        { label: '3M', value: '3M', premium: true },
-        { label: '6M', value: '6M', premium: true },
-        { label: '1A', value: '1Y', premium: true },
-        { label: 'TODO', value: 'ALL', premium: true },
+        { label: '10P', value: 'LAST_10' },
+        { label: '1M', value: '1M' },
+        { label: '3M', value: '3M' },
+        { label: '6M', value: '6M' },
+        { label: '1A', value: '1Y' },
+        { label: 'TODO', value: 'ALL' },
     ];
 
     const favoriteClub = getFavoriteClubRanking(clubRankings);
@@ -5531,16 +5573,8 @@ const ProfileView: React.FC<ViewProps> = ({ currentUser, rankingPosition, rating
                             {currentUser.categoryNumber || getCategory(currentUser.level)}
                         </div>
                     </div>
-                    {currentUser.isPremium && (
-                         <div className="absolute -top-2 -right-2 bg-gradient-to-br from-amber-400 to-amber-600 text-dark-900 p-1.5 rounded-full border-2 border-dark-900 shadow-lg">
-                            <Crown size={12} fill="currentColor" />
-                        </div>
-                    )}
                 </div>
-                <h1 className="text-xl font-bold text-white mt-3 flex items-center gap-2">
-                    {currentUser.name} 
-                    {currentUser.isPremium && <span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/50 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">Pro</span>}
-                </h1>
+                <h1 className="text-xl font-bold text-white mt-3">{currentUser.name}</h1>
                 <div className="flex items-center gap-2 mt-1">
                     <p className="text-gray-400 text-sm">Nivel <span className="text-white font-bold">{currentUser.level.toFixed(2)}</span> • Categoría {currentUser.categoryName || 'Sexta'}</p>
                     {currentUser.verificationStatus === 'verified' ? (
@@ -5551,12 +5585,38 @@ const ProfileView: React.FC<ViewProps> = ({ currentUser, rankingPosition, rating
                         <div className="flex items-center gap-1 text-[10px] text-amber-400 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
                             <Clock size={10} /> Pendiente
                         </div>
+                    ) : currentUser.verificationStatus === 'rejected' ? (
+                        <div className="flex items-center gap-1 text-[10px] text-red-400 font-bold bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/20">
+                            <AlertTriangle size={10} /> Rechazado
+                        </div>
                     ) : null}
                 </div>
                 <div className="flex gap-1 mt-1">
                     {[1,2,3,4,5].map(s => <Star key={s} size={12} className="text-amber-400" fill="currentColor" />)}
                 </div>
             </div>
+
+            {currentUser.categoryNumber && currentUser.categoryNumber <= 2 && onOpenPlayerClubVerification && (
+                <button
+                    onClick={() => onOpenPlayerClubVerification()}
+                    className="w-full mb-6 bg-gradient-to-r from-dark-800 to-green-900/20 border border-green-500/20 rounded-2xl p-4 flex items-start gap-4 text-left hover:bg-dark-800/90 transition-colors"
+                >
+                    <div className="bg-green-500/10 p-2.5 rounded-full shrink-0 border border-green-500/20">
+                        <ShieldCheck size={20} className="text-green-400" />
+                    </div>
+                    <div className="flex-1">
+                        <h3 className="text-white font-bold text-sm mb-1">Verificacion de Categoria</h3>
+                        <p className="text-gray-300 text-xs leading-relaxed">
+                            {currentUser.verificationStatus === 'verified'
+                                ? 'Tu categoria ya fue validada por un club. Podes revisar el estado oficial y el historial.'
+                                : currentUser.verificationStatus === 'rejected'
+                                    ? 'La ultima solicitud fue rechazada. Podes revisar el motivo y volver a solicitar en un club real.'
+                                    : 'Esta categoria necesita validacion oficial. Entra para pedirla en un club real.'}
+                        </p>
+                    </div>
+                    <ChevronRight size={18} className="text-gray-500 shrink-0 mt-1" />
+                </button>
+            )}
 
             {/* Coach Insight Card */}
             <div className="mb-6 bg-gradient-to-r from-dark-800 to-padel-900/20 border border-padel-500/30 rounded-xl p-4 flex items-start gap-4 shadow-lg relative overflow-hidden">
@@ -5621,7 +5681,6 @@ const ProfileView: React.FC<ViewProps> = ({ currentUser, rankingPosition, rating
                 <div className="flex bg-dark-900/50 p-1 rounded-lg mb-4 border border-dark-700/50 justify-between">
                     {filters.map(f => {
                          const isActive = timeRange === f.value;
-                         const isLocked = f.premium && !currentUser.isPremium;
                          return (
                             <button
                                 key={f.value}
@@ -5629,13 +5688,10 @@ const ProfileView: React.FC<ViewProps> = ({ currentUser, rankingPosition, rating
                                 className={`flex-1 py-1.5 rounded-md text-[10px] font-bold transition-all flex items-center justify-center gap-1 ${
                                     isActive 
                                     ? 'bg-padel-600 text-white shadow-md' 
-                                    : isLocked 
-                                        ? 'text-gray-600 cursor-not-allowed' 
-                                        : 'text-gray-400 hover:text-white hover:bg-dark-700'
+                                    : 'text-gray-400 hover:text-white hover:bg-dark-700'
                                 }`}
                             >
                                 {f.label}
-                                {isLocked && <Lock size={8} className="text-amber-500" />}
                             </button>
                          )
                     })}
@@ -5688,7 +5744,7 @@ const ProfileView: React.FC<ViewProps> = ({ currentUser, rankingPosition, rating
                 </div>
             </div>
 
-            {/* Premium Stats Grid */}
+            {/* Insight Stats Grid */}
             <div className="grid grid-cols-3 gap-3 mb-6">
                 {/* Card 1: Club Favorito (CLICKABLE) */}
                 <button 
@@ -5842,8 +5898,11 @@ export default function App() {
   const [showTopPartners, setShowTopPartners] = useState(false);
   const [showTopRivals, setShowTopRivals] = useState(false);
   const [showCoaches, setShowCoaches] = useState(false);
+  const [showPlayerClubVerification, setShowPlayerClubVerification] = useState(false);
+  const [showClubVerificationRequests, setShowClubVerificationRequests] = useState(false);
   const [showClubUsers, setShowClubUsers] = useState(false);
   const [showClubAgenda, setShowClubAgenda] = useState(false);
+  const [showClubCourts, setShowClubCourts] = useState(false);
   const [showCreateTournament, setShowCreateTournament] = useState(false);
   const [tournamentToLaunch, setTournamentToLaunch] = useState<any | null>(null);
   const [tournamentToEdit, setTournamentToEdit] = useState<any | null>(null);
@@ -5863,6 +5922,8 @@ export default function App() {
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
+  const [authNotice, setAuthNotice] = useState<{ tone: 'success' | 'info'; message: string } | null>(null);
+  const [pendingVerificationEmail, setPendingVerificationEmail] = useState('');
   const [rankingEntries, setRankingEntries] = useState<Awaited<ReturnType<typeof backendApi.getRankings>>>([]);
   const [myRatingHistory, setMyRatingHistory] = useState<Awaited<ReturnType<typeof backendApi.getMyRatingHistory>>>([]);
   const [topPartnersInsights, setTopPartnersInsights] = useState<Awaited<ReturnType<typeof backendApi.getMyTopPartners>>>([]);
@@ -5924,6 +5985,22 @@ export default function App() {
 
     setNotification(fallbackMessage);
     setTimeout(() => setNotification(null), 4000);
+  };
+
+  const syncCurrentUserVerificationStatus = (
+    requiresClubVerification: boolean,
+    clubVerificationStatus: 'NOT_REQUIRED' | 'PENDING' | 'VERIFIED' | 'REJECTED',
+  ) => {
+    const verificationStatus = toFrontendVerificationStatus(
+      requiresClubVerification,
+      clubVerificationStatus,
+    );
+
+    setCurrentUser(previous => ({
+      ...previous,
+      verificationStatus,
+      isCategoryVerified: verificationStatus === 'verified',
+    }));
   };
 
   const replaceBackendManagedMatches = (nextBackendMatches: Match[]) => {
@@ -6194,31 +6271,47 @@ export default function App() {
   const completeRegistration = async (data: {
     name: string;
     email: string;
+    phone: string;
     password: string;
     clubCity?: string;
     clubAddress?: string;
+    acceptTerms: boolean;
+    acceptedTermsVersion: string;
+    acceptPrivacyPolicy: boolean;
+    acceptedPrivacyVersion: string;
+    allowActivityTracking?: boolean;
+    allowOperationalNotifications?: boolean;
+    consentPreferencesVersion: string;
   }) => {
     setAuthLoading(true);
+    setAuthNotice(null);
 
     try {
       await backendApi.register({
+        fullName: authAccountMode === 'player' ? data.name : null,
         email: data.email,
+        phone: data.phone,
         password: data.password,
         accountType: authAccountMode === 'club' ? 'CLUB' : 'PLAYER',
         clubName: authAccountMode === 'club' ? data.name : null,
         clubCity: authAccountMode === 'club' ? data.clubCity?.trim() || null : null,
         clubAddress: authAccountMode === 'club' ? data.clubAddress?.trim() || null : null,
+        acceptTerms: data.acceptTerms,
+        acceptedTermsVersion: data.acceptedTermsVersion,
+        acceptPrivacyPolicy: data.acceptPrivacyPolicy,
+        acceptedPrivacyVersion: data.acceptedPrivacyVersion,
+        allowActivityTracking: data.allowActivityTracking ?? false,
+        allowOperationalNotifications: data.allowOperationalNotifications ?? false,
+        consentPreferencesVersion: data.consentPreferencesVersion,
       });
-      const loginResponse = await backendApi.login({ email: data.email, password: data.password });
-      ensureAuthModeMatchesRole(authAccountMode, loginResponse.role);
-
-      storeAccessToken(loginResponse.accessToken);
-      storeDisplayName(data.name);
-      setTempName(data.name);
-      setAuthPassword(data.password);
+      setAuthEmail(data.email.trim());
+      setAuthPassword('');
+      setPendingVerificationEmail(data.email.trim());
+      setAuthNotice({
+        tone: 'success',
+        message: `Te enviamos un link de confirmación a ${data.email.trim()}. Confirmá tu correo y después iniciá sesión.`,
+      });
       setIsRegistering(false);
-
-      await hydrateAuthenticatedUser(data.name);
     } catch (error) {
       showAuthError(error, 'No se pudo crear la cuenta.');
     } finally {
@@ -6230,6 +6323,7 @@ export default function App() {
   const handleLoginSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setAuthLoading(true);
+    setAuthNotice(null);
     const email = authEmail.trim();
     const password = authPassword;
 
@@ -6240,13 +6334,46 @@ export default function App() {
       const loginResponse = await backendApi.login({ email, password });
       ensureAuthModeMatchesRole(authAccountMode, loginResponse.role);
       storeAccessToken(loginResponse.accessToken);
+      setAuthNotice(null);
+      setPendingVerificationEmail('');
       await hydrateAuthenticatedUser();
     } catch (error) {
       clearAccessToken();
+      if (error instanceof BackendApiError && error.message.toLowerCase().includes('confirmar tu email')) {
+        setPendingVerificationEmail(email);
+        setAuthNotice({
+          tone: 'info',
+          message: error.message,
+        });
+        return;
+      }
       showAuthError(error, 'No se pudo iniciar sesión.');
     } finally {
       setAuthLoading(false);
       setSessionChecked(true);
+    }
+  };
+
+  const handleResendEmailVerification = async () => {
+    const email = (pendingVerificationEmail || authEmail).trim();
+    if (!email) {
+      return;
+    }
+
+    setAuthLoading(true);
+    setAuthNotice(null);
+
+    try {
+      const response = await backendApi.resendEmailVerification({ email });
+      setPendingVerificationEmail(email);
+      setAuthNotice({
+        tone: 'success',
+        message: response.message,
+      });
+    } catch (error) {
+      showAuthError(error, 'No se pudo reenviar el correo de confirmación.');
+    } finally {
+      setAuthLoading(false);
     }
   };
 
@@ -6278,6 +6405,8 @@ export default function App() {
     setAuthAccountMode('player');
     setAuthEmail('');
     setAuthPassword('');
+    setAuthNotice(null);
+    setPendingVerificationEmail('');
     setCurrentUser(MOCK_USER);
     setMatches([]);
     setAgenda([]);
@@ -6562,6 +6691,15 @@ export default function App() {
                                 ? 'Ingresá con una cuenta administradora de club para ver solo la operación de tu sede.'
                                 : 'Ingresá con tu cuenta de jugador para ver partidos, ranking, torneos y perfil.'}
                             </p>
+                            {authNotice && (
+                              <div className={`rounded-2xl border px-4 py-3 text-sm leading-relaxed ${
+                                authNotice.tone === 'success'
+                                  ? 'bg-green-500/10 border-green-500/20 text-green-200'
+                                  : 'bg-amber-500/10 border-amber-500/20 text-amber-100'
+                              }`}>
+                                {authNotice.message}
+                              </div>
+                            )}
                             <div className="relative group">
                                 <Users className="absolute left-3 top-3.5 text-gray-500 group-focus-within:text-padel-400 transition-colors" size={20} />
                                 <input
@@ -6585,6 +6723,17 @@ export default function App() {
                             <Button type="submit" fullWidth disabled={authLoading} className="mt-2 font-bold text-lg shadow-xl shadow-padel-500/10 group relative overflow-hidden">
                                 {authLoading ? 'Ingresando...' : 'Ingresar'}
                             </Button>
+                            {pendingVerificationEmail && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  void handleResendEmailVerification();
+                                }}
+                                className="w-full text-center text-sm text-padel-400 font-bold hover:text-padel-300 transition-colors"
+                              >
+                                Reenviar correo de confirmación
+                              </button>
+                            )}
                         </form>
                     <div className="mt-6 pt-6 border-t border-white/5 text-center">
                       <p className="text-sm text-gray-400">
@@ -7105,6 +7254,23 @@ export default function App() {
 	          setTimeout(() => setNotification(null), 3000);
 	      } catch (error) {
 	          showMatchError(error, 'No se pudo salir del torneo.');
+	      }
+	  };
+
+	  const handleArchiveTournament = async (tournamentId: string) => {
+	      const backendTournamentId = getBackendTournamentId(tournamentId);
+	      if (!backendTournamentId) {
+	          setTournaments(prev => prev.map(t => t.id === tournamentId ? { ...t, isArchived: true } : t));
+	          return;
+	      }
+
+	      try {
+	          await backendApi.archiveTournament(backendTournamentId);
+	          await refreshBackendTournaments();
+	          setNotification('Torneo archivado.');
+	          setTimeout(() => setNotification(null), 3000);
+	      } catch (error) {
+	          showMatchError(error, 'No se pudo archivar el torneo.');
 	      }
 	  };
 	
@@ -7711,10 +7877,6 @@ export default function App() {
       }
   };
 
-  const handlePremiumAttempt = (feature: string) => {
-      setNotification(`🔒 ${feature} es una función Premium.`);
-      setTimeout(() => setNotification(null), 3000);
-  }
 
   return (
     <div className="min-h-screen bg-dark-900 font-sans text-gray-100 selection:bg-padel-500 selection:text-dark-900 relative">
@@ -7745,8 +7907,19 @@ export default function App() {
              />
          )}
          {showCoaches && <CoachesView onClose={() => setShowCoaches(false)} />}
+         {showPlayerClubVerification && (
+             <PlayerClubVerificationView
+                 onClose={() => setShowPlayerClubVerification(false)}
+                 onSummaryChange={(summary) => syncCurrentUserVerificationStatus(
+                     summary.requiresClubVerification,
+                     summary.clubVerificationStatus,
+                 )}
+             />
+         )}
+         {showClubVerificationRequests && <ClubVerificationRequestsView onClose={() => setShowClubVerificationRequests(false)} />}
          {showClubUsers && <ClubUsersView onClose={() => setShowClubUsers(false)} />}
          {showClubAgenda && <ClubAgendaView onClose={() => setShowClubAgenda(false)} />}
+         {showClubCourts && <ClubCourtsView onClose={() => setShowClubCourts(false)} />}
          {showTopPartners && <TopPartnersView currentUser={currentUser} partners={topPartnersInsights} onClose={() => setShowTopPartners(false)} />}
          {showTopRivals && <TopRivalsView rivals={topRivalsInsights} onClose={() => setShowTopRivals(false)} />}
          {showCreateTournament && <CreateTournamentView currentUser={currentUser} selectablePlayers={tournamentSelectablePlayers} clubOptions={tournamentClubOptions.length > 0 ? tournamentClubOptions : undefined} onClose={() => setShowCreateTournament(false)} onCreate={(data) => handleCreateTournament(data)} />}
@@ -7760,7 +7933,7 @@ export default function App() {
              />
          )}
 
-        {currentTab === 'play' && <PlayView currentUser={currentUser} rankingPosition={currentUserRankingPosition} myMatchesByScope={myMatchesByScope} pendingResultMatches={pendingResultActionableMatches} pendingResultMatchesById={pendingResultActionableMatchesById} notifications={notifications} unreadNotificationsCount={unreadNotificationsCount} navigateTo={setCurrentTab} onOpenCoaches={() => setShowCoaches(true)} onOpenNotifications={() => setShowNotificationsInbox(true)} agenda={agenda} clubs={clubCatalog ?? undefined} matches={matches} tournaments={tournaments} onJoin={handleJoinMatch} onRequest={handleRequestAccess} onLeaveMatch={handleLeaveMatch} onCancelMatch={handleCancelMatch} onSubmitResult={handleSubmitResult} onConfirmResult={handleConfirmResult} onRejectResult={handleRejectResult} onUserClick={setSelectedPublicUser} onLaunchTournament={setTournamentToLaunch} onOpenTournamentStatus={setSelectedTournamentStatus} onAddTeamsToTournament={setTournamentToEdit} onAddResult={handleOpenResultInput} onArchiveTournament={(id) => setTournaments(prev => prev.map(t => t.id === id ? { ...t, isArchived: true } : t))} />}
+        {currentTab === 'play' && <PlayView currentUser={currentUser} rankingPosition={currentUserRankingPosition} myMatchesByScope={myMatchesByScope} pendingResultMatches={pendingResultActionableMatches} pendingResultMatchesById={pendingResultActionableMatchesById} notifications={notifications} unreadNotificationsCount={unreadNotificationsCount} navigateTo={setCurrentTab} onOpenCoaches={() => setShowCoaches(true)} onOpenNotifications={() => setShowNotificationsInbox(true)} agenda={agenda} clubs={clubCatalog ?? undefined} matches={matches} tournaments={tournaments} onJoin={handleJoinMatch} onRequest={handleRequestAccess} onLeaveMatch={handleLeaveMatch} onCancelMatch={handleCancelMatch} onSubmitResult={handleSubmitResult} onConfirmResult={handleConfirmResult} onRejectResult={handleRejectResult} onUserClick={setSelectedPublicUser} onLaunchTournament={setTournamentToLaunch} onOpenTournamentStatus={setSelectedTournamentStatus} onAddTeamsToTournament={setTournamentToEdit} onAddResult={handleOpenResultInput} onArchiveTournament={handleArchiveTournament} />}
         {currentTab === 'matches' && <MatchesView currentUser={currentUser} clubs={clubCatalog ?? undefined} matches={matches} onJoin={handleJoinMatch} onRequest={handleRequestAccess} onLeaveMatch={handleLeaveMatch} onCancelMatch={handleCancelMatch} onUserClick={setSelectedPublicUser} />}
         {currentTab === 'competition' && (
             <CompetitionView
@@ -7776,11 +7949,13 @@ export default function App() {
           <ClubDashboardBackendView
             onOpenClubUsers={() => setShowClubUsers(true)}
             onOpenClubAgenda={() => setShowClubAgenda(true)}
+            onOpenClubCourts={() => setShowClubCourts(true)}
+            onOpenClubVerification={() => setShowClubVerificationRequests(true)}
             onLogout={handleLogout}
           />
         )}
-        {currentTab === 'clubs' && <ClubsView currentUser={currentUser} clubs={clubCatalog ?? undefined} onBook={handleBookMatch} />}
-        {currentTab === 'profile' && <ProfileView currentUser={currentUser} rankingPosition={currentUserRankingPosition} ratingHistory={ratingHistoryView} topPartners={topPartnersInsights} topRivals={topRivalsInsights} clubRankings={clubRankingSummaries} matches={matches} onOpenClubRankings={() => setShowClubRankings(true)} onOpenTopPartners={() => setShowTopPartners(true)} onOpenTopRivals={() => setShowTopRivals(true)} onPremiumFeatureAttempt={handlePremiumAttempt} onUserClick={setSelectedPublicUser} onOpenNationalRanking={() => setShowNationalRanking(true)} onOpenMatchHistory={() => setShowProfileMatchHistory(true)} />}
+        {currentTab === 'clubs' && <ClubsBookingView currentUser={currentUser} clubs={clubCatalog ?? undefined} onBook={handleBookMatch} />}
+        {currentTab === 'profile' && <ProfileView currentUser={currentUser} rankingPosition={currentUserRankingPosition} ratingHistory={ratingHistoryView} topPartners={topPartnersInsights} topRivals={topRivalsInsights} clubRankings={clubRankingSummaries} matches={matches} onOpenClubRankings={() => setShowClubRankings(true)} onOpenTopPartners={() => setShowTopPartners(true)} onOpenTopRivals={() => setShowTopRivals(true)} onUserClick={setSelectedPublicUser} onOpenNationalRanking={() => setShowNationalRanking(true)} onOpenMatchHistory={() => setShowProfileMatchHistory(true)} onOpenPlayerClubVerification={() => setShowPlayerClubVerification(true)} />}
 
         {tournamentToLaunch && <LaunchTournamentView tournament={tournamentToLaunch} matches={matches} onClose={() => setTournamentToLaunch(null)} onLaunch={handleLaunchTournament} />}
         {selectedTournamentStatus && (
@@ -7858,3 +8033,5 @@ export default function App() {
     </div>
   );
 }
+
+
