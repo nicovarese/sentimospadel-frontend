@@ -1,20 +1,52 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Sentimos Padel Frontend
 
-# Run and deploy your AI Studio app
+Frontend Vite + React de Sentimos Padel.
 
-This contains everything you need to run your app locally.
+## Prerrequisitos
 
-View your app in AI Studio: https://ai.studio/apps/f40b85d3-3090-48b5-b764-41cec58430ef
+- Node.js 22+
+- npm 10+
 
-## Run Locally
+## Desarrollo web local
 
-**Prerequisites:**  Node.js
+1. Instalar dependencias:
 
+```powershell
+npm ci
+```
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+2. Crear `.env.local` y configurar la API:
+
+```env
+VITE_API_BASE_URL=http://localhost:8081
+```
+
+3. Levantar la app:
+
+```powershell
+npm run dev
+```
+
+## Build
+
+```powershell
+npm run build
+```
+
+## Mobile packaging
+
+Capacitor ya esta integrado.
+
+Scripts utiles:
+
+```powershell
+npm run build:mobile
+npm run cap:sync:android
+npm run cap:sync:ios
+npm run cap:open:android
+npm run cap:open:ios
+```
+
+Guia completa:
+
+- [docs/mobile-packaging.md](docs/mobile-packaging.md)

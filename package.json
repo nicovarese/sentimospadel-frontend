@@ -5,11 +5,33 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:staging": "vite --mode staging",
     "build": "vite build",
+    "build:staging": "vite build --mode staging",
+    "build:production": "vite build --mode production",
+    "build:mobile": "vite build",
+    "build:mobile:staging": "vite build --mode staging",
+    "build:mobile:production": "vite build --mode production",
     "preview": "vite preview",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "cap:sync": "npx cap sync",
+    "cap:sync:android": "npm run build:mobile && npx cap sync android",
+    "cap:sync:ios": "npm run build:mobile && npx cap sync ios",
+    "cap:sync:android:staging": "npm run build:mobile:staging && cross-env CAPACITOR_ENV=staging npx cap sync android",
+    "cap:sync:ios:staging": "npm run build:mobile:staging && cross-env CAPACITOR_ENV=staging npx cap sync ios",
+    "cap:sync:android:production": "npm run build:mobile:production && cross-env CAPACITOR_ENV=production npx cap sync android",
+    "cap:sync:ios:production": "npm run build:mobile:production && cross-env CAPACITOR_ENV=production npx cap sync ios",
+    "cap:add:android": "npx cap add android",
+    "cap:add:ios": "npx cap add ios",
+    "cap:open:android": "npx cap open android",
+    "cap:open:ios": "npx cap open ios"
   },
   "dependencies": {
+    "@capacitor/android": "^8.3.0",
+    "@capacitor/app": "^8.1.0",
+    "@capacitor/core": "^8.3.0",
+    "@capacitor/ios": "^8.3.0",
+    "@capacitor/push-notifications": "^8.0.0",
     "@google/genai": "^1.38.0",
     "@supabase/supabase-js": "^2.98.0",
     "lucide-react": "^0.563.0",
@@ -18,8 +40,13 @@
     "recharts": "^3.7.0"
   },
   "devDependencies": {
+    "@capacitor/cli": "^7.6.1",
+    "@rollup/rollup-win32-x64-msvc": "^4.60.1",
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
+    "autoprefixer": "^10.4.21",
+    "cross-env": "^10.1.0",
+    "tailwindcss": "^3.4.17",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
   }

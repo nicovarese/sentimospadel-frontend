@@ -7,6 +7,7 @@ import type {
   UruguayCategory,
 } from './backendApi';
 import { BackendApiError } from './backendApi';
+import { resolveProfileAvatar } from './profileInsightsIntegration';
 
 export const DISPLAY_NAME_STORAGE_KEY = 'sentimos.displayName';
 
@@ -51,13 +52,13 @@ export const categoryToDisplay = (category?: UruguayCategory | null): { category
   return CATEGORY_DISPLAY[category];
 };
 
-const deriveDisplayName = (email: string, preferredName?: string | null, profileName?: string | null): string => {
-  if (preferredName?.trim()) {
-    return preferredName.trim();
-  }
-
+const deriveDisplayName = (email: string, profileName?: string | null, preferredName?: string | null): string => {
   if (profileName?.trim()) {
     return profileName.trim();
+  }
+
+  if (preferredName?.trim()) {
+    return preferredName.trim();
   }
 
   const [localPart] = email.split('@', 1);
@@ -108,7 +109,7 @@ export const buildFrontendUser = (
       accountType: 'club',
       managedClubId: authUser.managedClubId,
       managedClubName: authUser.managedClubName,
-      name: authUser.managedClubName ?? deriveDisplayName(authUser.email, preferredName, profile?.fullName),
+      name: authUser.managedClubName ?? deriveDisplayName(authUser.email, profile?.fullName, preferredName),
       level: 0,
       categoryName: undefined,
       categoryNumber: undefined,
@@ -139,7 +140,18 @@ export const buildFrontendUser = (
     accountType: 'player',
     managedClubId: authUser.managedClubId,
     managedClubName: authUser.managedClubName,
-    name: deriveDisplayName(authUser.email, preferredName, profile?.fullName),
+    name: deriveDisplayName(authUser.email, profile?.fullName, preferredName),
+    avatar: resolveProfileAvatar(
+      deriveDisplayName(authUser.email, profile?.fullName, preferredName),
+      profile?.photoUrl,
+    ),
+    photoUrl: profile?.photoUrl ?? null,
+    preferredSide: profile?.preferredSide ?? null,
+    city: profile?.city ?? null,
+    representedClubId: profile?.representedClubId ?? null,
+    representedClubName: profile?.representedClubName ?? null,
+    bio: profile?.bio ?? null,
+    location: profile?.city ?? undefined,
     level: Number(rating),
     categoryName,
     categoryNumber,
@@ -148,6 +160,7 @@ export const buildFrontendUser = (
     isCategoryVerified: verificationStatus === 'verified',
     surveyCompleted: Boolean(profile?.surveyCompleted ?? onboarding),
     matchesPlayed: profile?.matchesPlayed ?? 0,
+    clubAffiliation: profile?.representedClubId != null ? `backend-club-${profile.representedClubId}` : undefined,
     isPremium: false,
     badges: [],
   };

@@ -10,6 +10,7 @@ import type {
   PlayerMatchHistoryEntryResponse,
   SubmitMatchResultRequest,
 } from './backendApi';
+import { categoryToDisplay, toFrontendVerificationStatus } from './authOnboardingSession';
 
 const DEFAULT_BACKEND_PLAYER_RATING = 3.5;
 
@@ -57,6 +58,10 @@ const toFrontendStatus = (match: BackendMatchLike): Match['status'] => {
     return 'cancelled';
   }
 
+  if (match.status === 'PENDING_CLUB_CONFIRMATION') {
+    return 'pending_approval';
+  }
+
   if (match.status === 'COMPLETED') {
     return 'completed';
   }
@@ -95,16 +100,27 @@ const toFrontendPlayer = (
     return currentUser;
   }
 
+  const { categoryNumber, categoryName } = categoryToDisplay(participant.currentCategory);
+  const hasOfficialRating = participant.currentRating != null;
+  const verificationStatus = toFrontendVerificationStatus(
+    participant.requiresClubVerification,
+    participant.clubVerificationStatus,
+  );
+
   return {
     id: `player-${participant.playerProfileId}`,
     backendUserId: participant.userId,
     backendPlayerProfileId: participant.playerProfileId,
     name: participant.fullName,
     avatar: toAvatarUrl(participant.playerProfileId),
-    level: DEFAULT_BACKEND_PLAYER_RATING,
-    hasOfficialRating: false,
-    verificationStatus: 'none',
-    matchesPlayed: 0,
+    level: participant.currentRating ?? DEFAULT_BACKEND_PLAYER_RATING,
+    hasOfficialRating,
+    categoryNumber,
+    categoryName,
+    publicCategoryNumber: categoryNumber ?? null,
+    verificationStatus,
+    isCategoryVerified: verificationStatus === 'verified',
+    matchesPlayed: participant.matchesPlayed ?? 0,
     reputation: 100,
     isPremium: false,
   };

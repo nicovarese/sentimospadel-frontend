@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Calendar, CheckCircle, Grid, LogOut, ShieldCheck, TrendingUp, Users } from 'lucide-react';
+import { Calendar, CheckCircle, Grid, LogOut, ShieldCheck, Swords, TrendingUp, Trophy, Users } from 'lucide-react';
 import { backendApi, BackendApiError, type ClubManagementDashboardResponse } from '../services/backendApi';
 
 interface ClubDashboardViewProps {
+  onCreateMatch?: () => void;
+  onCreateTournament?: () => void;
   onOpenClubUsers?: () => void;
   onOpenClubAgenda?: () => void;
   onOpenClubCourts?: () => void;
@@ -11,6 +13,8 @@ interface ClubDashboardViewProps {
 }
 
 export const ClubDashboardView: React.FC<ClubDashboardViewProps> = ({
+  onCreateMatch,
+  onCreateTournament,
   onOpenClubUsers,
   onOpenClubAgenda,
   onOpenClubCourts,
@@ -133,6 +137,20 @@ export const ClubDashboardView: React.FC<ClubDashboardViewProps> = ({
 
           <h3 className="text-white font-bold mb-3">Gestion</h3>
           <div className="grid grid-cols-2 gap-3 mb-6">
+            <button
+              onClick={() => onCreateMatch && onCreateMatch()}
+              className="bg-dark-800 p-4 rounded-xl border border-dark-700 flex flex-col items-center justify-center gap-2 hover:bg-dark-700 transition-colors"
+            >
+              <Swords size={24} className="text-cyan-400" />
+              <span className="text-gray-200 text-xs font-bold">Crear Partido</span>
+            </button>
+            <button
+              onClick={() => onCreateTournament && onCreateTournament()}
+              className="bg-dark-800 p-4 rounded-xl border border-dark-700 flex flex-col items-center justify-center gap-2 hover:bg-dark-700 transition-colors"
+            >
+              <Trophy size={24} className="text-amber-400" />
+              <span className="text-gray-200 text-xs font-bold">Crear Torneo</span>
+            </button>
             <button
               onClick={() => onOpenClubAgenda && onOpenClubAgenda()}
               className="bg-dark-800 p-4 rounded-xl border border-dark-700 flex flex-col items-center justify-center gap-2 hover:bg-dark-700 transition-colors"

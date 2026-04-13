@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Match, User, MatchType } from '../types';
-import { Clock, MapPin, Users, Zap, ShieldCheck, Trophy, BadgeCheck, CircleDashed, SlidersHorizontal, AlertTriangle, Calendar, Plus } from 'lucide-react';
+import { Clock, MapPin, Users, Zap, ShieldCheck, Trophy, BadgeCheck, CircleDashed, SlidersHorizontal, AlertTriangle, Calendar, Plus, Share2 } from 'lucide-react';
 import { analyzeMatchFit } from '../services/geminiService';
 
 interface MatchCardProps {
@@ -13,10 +13,25 @@ interface MatchCardProps {
   onCancel?: (id: string) => void;
   onUserClick?: (user: User) => void;
   onAddResult?: (match: Match) => void;
+  onInvite?: (match: Match) => void;
+  inviteLoading?: boolean;
   className?: string;
 }
 
-export const MatchCard: React.FC<MatchCardProps> = ({ match, currentUser, clubName, onJoin, onRequest, onLeave, onCancel, onUserClick, onAddResult, className = '' }) => {
+export const MatchCard: React.FC<MatchCardProps> = ({
+  match,
+  currentUser,
+  clubName,
+  onJoin,
+  onRequest,
+  onLeave,
+  onCancel,
+  onUserClick,
+  onAddResult,
+  onInvite,
+  inviteLoading = false,
+  className = '',
+}) => {
   const [analysis, setAnalysis] = useState<string | null>(null);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
 
@@ -38,14 +53,16 @@ export const MatchCard: React.FC<MatchCardProps> = ({ match, currentUser, clubNa
   const isRejected = match.rejectedPlayerIds?.includes(currentUser.id);
   const isApprovedGuest = match.approvedGuestIds?.includes(currentUser.id);
   const isJoined = match.players.some(p => p?.id === currentUser.id);
+  const isPendingClubApproval = match.status === 'pending_approval';
   const isLockedMatchStatus = ['completed', 'awaiting_result', 'awaiting_validation', 'cancelled'].includes(match.status);
   const isBackendSocialMatch = match.matchSource === 'backend' && !match.isTournamentMatch;
   const isMatchCreator = currentUser.backendPlayerProfileId != null
     && match.createdByPlayerProfileId === currentUser.backendPlayerProfileId;
   const canLeaveBackendMatch = isBackendSocialMatch && isJoined && !isMatchCreator && !isLockedMatchStatus;
   const canCancelBackendMatch = isBackendSocialMatch && isMatchCreator && !isLockedMatchStatus;
+  const canShareInvite = Boolean(onInvite && isBackendSocialMatch && isJoined && !isLockedMatchStatus && !isPendingClubApproval && !isFilled);
 
-  const canPickSlot = !isLockedMatchStatus && !isJoined && !isFilled && (isApprovedGuest || isLevelFit) && !match.isTournamentMatch;
+  const canPickSlot = !isLockedMatchStatus && !isPendingClubApproval && !isJoined && !isFilled && (isApprovedGuest || isLevelFit) && !match.isTournamentMatch;
 
   // Type Logic & Styling
   const isCompetitive = match.type === MatchType.COMPETITIVE;
@@ -132,6 +149,9 @@ export const MatchCard: React.FC<MatchCardProps> = ({ match, currentUser, clubNa
               </div>
           );
       }
+      const hasOfficialRating = player.hasOfficialRating !== false;
+      const ratingLabel = hasOfficialRating ? player.level.toFixed(2) : 'S/R';
+
       return (
         <div 
             className={`flex items-center gap-2 ${alignRight ? 'flex-row-reverse text-right' : ''} ${onUserClick ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
@@ -140,7 +160,7 @@ export const MatchCard: React.FC<MatchCardProps> = ({ match, currentUser, clubNa
             <div className="relative">
                 <img src={player.avatar} alt={player.name} className="w-7 h-7 rounded-full border border-dark-600 object-cover" />
                 <div className="absolute -bottom-1 -right-1 bg-dark-900 text-[7px] px-1 rounded border border-dark-700 text-gray-300">
-                    {player.level.toFixed(2)}
+                    {ratingLabel}
                 </div>
             </div>
             <div className="flex flex-col justify-center">
@@ -150,7 +170,11 @@ export const MatchCard: React.FC<MatchCardProps> = ({ match, currentUser, clubNa
                 {player.categoryNumber && player.categoryNumber <= 2 && player.verificationStatus !== 'verified' ? (
                     <p className="text-amber-500 text-[8px] mt-0.5 leading-none font-bold">{player.categoryNumber}ª · Pendiente</p>
                 ) : (
-                    isCompetitive && player.hasOfficialRating !== false && <p className="text-gray-500 text-[9px] mt-0.5 leading-none">Rating: {player.level.toFixed(2)}</p>
+                    isCompetitive && (
+                        <p className="text-gray-500 text-[9px] mt-0.5 leading-none">
+                            {hasOfficialRating ? `Rating: ${player.level.toFixed(2)}` : 'Rating no informado'}
+                        </p>
+                    )
                 )}
             </div>
         </div>
@@ -179,6 +203,14 @@ export const MatchCard: React.FC<MatchCardProps> = ({ match, currentUser, clubNa
           mainButtonDisabled = false;
           mainButtonStyle = 'bg-padel-600 hover:bg-padel-500 text-white shadow-lg shadow-padel-900/50';
       }
+  } else if (isPendingClubApproval && canCancelBackendMatch) {
+      mainButtonText = 'Cancelar solicitud';
+      mainButtonDisabled = false;
+      mainButtonStyle = 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30';
+  } else if (isPendingClubApproval) {
+      mainButtonText = 'Pend. aprobacion';
+      mainButtonDisabled = true;
+      mainButtonStyle = 'bg-amber-900/20 text-amber-500 border border-amber-900/50 cursor-not-allowed';
   } else if (canCancelBackendMatch) {
       mainButtonText = 'Cancelar';
       mainButtonDisabled = false;
@@ -303,6 +335,19 @@ export const MatchCard: React.FC<MatchCardProps> = ({ match, currentUser, clubNa
                 >
                     {mainButtonText}
                 </button>
+                {canShareInvite && (
+                    <button
+                        type="button"
+                        onClick={() => onInvite && onInvite(match)}
+                        disabled={inviteLoading}
+                        className="w-8 flex items-center justify-center bg-dark-700 hover:bg-dark-600 rounded-lg text-padel-400 border border-dark-600 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                        aria-label="Compartir link de invitacion"
+                    >
+                        {inviteLoading
+                            ? <div className="animate-spin w-3 h-3 border-2 border-current border-t-transparent rounded-full" />
+                            : <Share2 size={14} />}
+                    </button>
+                )}
                 <button 
                     onClick={handleAnalyze}
                     className="w-8 flex items-center justify-center bg-dark-700 hover:bg-dark-600 rounded-lg text-padel-400 border border-dark-600 transition-colors"

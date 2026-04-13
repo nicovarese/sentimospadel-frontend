@@ -9,7 +9,9 @@ import type {
   TournamentMatchResponse,
   TournamentResponse,
   TournamentStandingsResponse,
+  TournamentStandingsTiebreak,
 } from './backendApi';
+import { categoryToDisplay, toFrontendVerificationStatus } from './authOnboardingSession';
 
 const DEFAULT_BACKEND_PLAYER_RATING = 3.5;
 const BACKEND_TOURNAMENT_ID_PREFIX = 'backend-tournament-';
@@ -37,12 +39,28 @@ const buildDescription = (response: TournamentResponse): string | undefined => {
 };
 
 const toFrontendTournamentUser = (
-  player: { playerProfileId: number; fullName: string; userId?: number },
+  player: {
+    playerProfileId: number;
+    fullName: string;
+    userId?: number;
+    currentRating?: number | null;
+    currentCategory?: TournamentResponse['entries'][number]['members'][number]['currentCategory'];
+    matchesPlayed?: number | null;
+    requiresClubVerification?: boolean;
+    clubVerificationStatus?: TournamentResponse['entries'][number]['members'][number]['clubVerificationStatus'];
+  },
   currentUser: User,
 ): User => {
   if (player.playerProfileId === currentUser.backendPlayerProfileId) {
     return currentUser;
   }
+
+  const { categoryNumber, categoryName } = categoryToDisplay(player.currentCategory);
+  const hasOfficialRating = player.currentRating != null;
+  const verificationStatus = toFrontendVerificationStatus(
+    player.requiresClubVerification ?? false,
+    player.clubVerificationStatus ?? 'NOT_REQUIRED',
+  );
 
   return {
     id: `player-${player.playerProfileId}`,
@@ -50,10 +68,14 @@ const toFrontendTournamentUser = (
     backendPlayerProfileId: player.playerProfileId,
     name: player.fullName,
     avatar: toAvatarUrl(player.playerProfileId),
-    level: DEFAULT_BACKEND_PLAYER_RATING,
-    hasOfficialRating: false,
-    verificationStatus: 'none',
-    matchesPlayed: 0,
+    level: player.currentRating ?? DEFAULT_BACKEND_PLAYER_RATING,
+    hasOfficialRating,
+    categoryNumber,
+    categoryName,
+    publicCategoryNumber: categoryNumber ?? null,
+    verificationStatus,
+    isCategoryVerified: verificationStatus === 'verified',
+    matchesPlayed: player.matchesPlayed ?? 0,
     reputation: 100,
     isPremium: false,
   };
@@ -69,6 +91,7 @@ export const buildTournamentClubOptions = (clubs: ClubResponse[]): Club[] =>
     courtsAvailable: 0,
     isPremium: false,
     isIntegrated: club.integrated,
+    bookingMode: club.bookingMode,
   }));
 
 export const buildTournamentSelectablePlayers = (
@@ -76,9 +99,11 @@ export const buildTournamentSelectablePlayers = (
   currentUser: User,
 ): User[] => {
   const byProfileId = new Map<string, User>();
+  const shouldIncludeCurrentUser = currentUser.accountType !== 'club';
 
   profiles.forEach(profile => {
     const mappedUser = profile.id === currentUser.backendPlayerProfileId
+      && shouldIncludeCurrentUser
       ? currentUser
       : {
           id: `player-${profile.id}`,
@@ -97,7 +122,7 @@ export const buildTournamentSelectablePlayers = (
     byProfileId.set(String(profile.id), mappedUser);
   });
 
-  if (currentUser.backendPlayerProfileId != null) {
+  if (shouldIncludeCurrentUser && currentUser.backendPlayerProfileId != null) {
     byProfileId.set(String(currentUser.backendPlayerProfileId), currentUser);
   }
 
@@ -211,14 +236,14 @@ const buildTournamentEntries = (
   }
 
   return (tournamentData.teams ?? [])
-    .filter((team: any) => Array.isArray(team.players) && team.players.length === 2)
+    .filter((team: any) => Array.isArray(team.players) && team.players.length >= 1 && team.players.length <= 2)
     .map((team: any) => {
       const memberIds = team.players
         .map((player: User) => player.backendPlayerProfileId)
         .filter((playerProfileId: number | undefined): playerProfileId is number => typeof playerProfileId === 'number');
 
-      if (memberIds.length !== 2) {
-        throw new Error('Todos los equipos del torneo deben usar jugadores reales con player profile.');
+      if (memberIds.length === 0 || memberIds.length > 2) {
+        throw new Error('Todos los equipos del torneo deben usar uno o dos jugadores reales con player profile.');
       }
 
       return {
@@ -242,6 +267,9 @@ export const buildCreateBackendTournamentRequest = (
     name: (tournamentData.name || 'Torneo Relámpago').trim(),
     description: tournamentData.rules?.trim() || null,
     clubId: getBackendClubId(tournamentData.clubId) ?? undefined,
+    categoryLabels: Array.isArray(tournamentData.categoryLabels)
+      ? tournamentData.categoryLabels.filter((categoryLabel: string) => categoryLabel?.trim())
+      : [],
     startDate: tournamentData.startDate,
     endDate: tournamentData.endDate || null,
     format: backendFormat,
@@ -249,13 +277,13 @@ export const buildCreateBackendTournamentRequest = (
       ? (tournamentData.americanoType === 'dinamico' ? 'DYNAMIC' : 'FIXED')
       : null,
     maxEntries: tournamentData.numTeams ?? undefined,
-    openEnrollment: true,
+    openEnrollment: tournamentData.openEnrollment !== false,
     competitive: tournamentData.isCompetitive !== false,
     leagueRounds: backendFormat === 'LEAGUE' ? 2 : undefined,
     matchesPerParticipant: backendFormat === 'AMERICANO'
       ? (tournamentData.matchesPerParticipant ?? 5)
       : undefined,
-    standingsTiebreak: 'GAMES_DIFFERENCE',
+    standingsTiebreak: (tournamentData.standingsTiebreak as TournamentStandingsTiebreak | undefined) ?? 'GAMES_DIFFERENCE',
     availableCourts: tournamentData.availableCourts ?? undefined,
     courtNames: (tournamentData.courtNames ?? []).filter((courtName: string) => courtName?.trim()),
     entries: buildTournamentEntries(tournamentData),
@@ -266,15 +294,15 @@ export const buildSyncTournamentEntriesRequest = (tournament: any): SyncTourname
   entries: tournament?.format === 'americano' && tournament?.americanoType === 'dinamico'
     ? buildDynamicAmericanoEntries(tournament)
     : (tournament.teams ?? [])
-      .filter((team: any) => Array.isArray(team.players) && team.players.length === 2)
+      .filter((team: any) => Array.isArray(team.players) && team.players.length >= 1 && team.players.length <= 2)
       .map((team: any) => {
         const members = team.players
           .map((player: User) => player.backendPlayerProfileId)
           .filter((playerProfileId: number | undefined): playerProfileId is number => typeof playerProfileId === 'number')
           .map(playerProfileId => ({ playerProfileId }));
 
-        if (members.length !== 2) {
-          throw new Error('Cada equipo debe tener dos jugadores reales antes de sincronizar.');
+        if (members.length === 0 || members.length > 2) {
+          throw new Error('Cada equipo debe tener uno o dos jugadores reales antes de sincronizar.');
         }
 
         return {
@@ -417,6 +445,8 @@ export const toFrontendTournament = (
     format: toFrontendTournamentFormat(response),
     americanoType: response.americanoType === 'DYNAMIC' ? 'dinamico' : 'fijo',
     isCompetitive: response.competitive,
+    affectsPlayerRating: response.affectsPlayerRating,
+    categoryLabels: response.categoryLabels ?? [],
     isArchived: response.archived,
     numTeams: response.maxEntries ?? response.currentEntriesCount,
     expectedUsers,
@@ -429,9 +459,11 @@ export const toFrontendTournament = (
       : currentUserEntry
         ? ` - Equipo: ${currentUserEntry.teamName}`
         : '',
+    currentUserEntryStatus: currentUserEntry?.status ?? null,
     availableCourts: response.availableCourts,
     courtNames: response.courtNames,
     openEnrollment: response.openEnrollment,
+    standingsTiebreak: response.standingsTiebreak,
     launchedAt: response.launchedAt,
     archivedAt: response.archivedAt,
     backendStatus: response.status,

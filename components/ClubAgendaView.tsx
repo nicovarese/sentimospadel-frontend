@@ -12,7 +12,7 @@ interface ClubAgendaViewProps {
   onClose: () => void;
 }
 
-type CourtStatus = 'available' | 'reserved' | 'blocked';
+type CourtStatus = 'available' | 'reserved' | 'blocked' | 'pending_confirmation';
 
 type DateOption = {
   label: string;
@@ -22,7 +22,7 @@ type DateOption = {
 const formatDateLabel = (date: Date, offset: number) => {
   if (offset === -1) return 'Ayer';
   if (offset === 0) return 'Hoy';
-  if (offset === 1) return 'Mañana';
+  if (offset === 1) return 'Manana';
 
   return new Intl.DateTimeFormat('es-UY', { weekday: 'long' }).format(date)
     .replace(/^\w/, char => char.toUpperCase());
@@ -47,6 +47,10 @@ const toCourtStatus = (status: ClubManagementAgendaResponse['courts'][number]['s
 
   if (status === 'BLOCKED') {
     return 'blocked';
+  }
+
+  if (status === 'PENDING_CONFIRMATION') {
+    return 'pending_confirmation';
   }
 
   return 'available';
@@ -117,6 +121,23 @@ export const ClubAgendaView: React.FC<ClubAgendaViewProps> = ({ onClose }) => {
     }
   };
 
+  const handlePendingBookingDecision = async (matchId: number, decision: 'approve' | 'reject') => {
+    try {
+      const response = decision === 'approve'
+        ? await backendApi.approveMyClubBookingRequest(matchId)
+        : await backendApi.rejectMyClubBookingRequest(matchId);
+      setAgenda(response);
+      showNotification(decision === 'approve' ? 'Reserva aprobada.' : 'Reserva rechazada.');
+    } catch (actionError) {
+      if (actionError instanceof BackendApiError) {
+        showNotification(actionError.message);
+        return;
+      }
+
+      showNotification('No pudimos responder esta solicitud.');
+    }
+  };
+
   const handleQuickAction = async (action: ClubQuickActionType) => {
     try {
       const response = await backendApi.executeMyClubQuickAction({ type: action });
@@ -139,6 +160,21 @@ export const ClubAgendaView: React.FC<ClubAgendaViewProps> = ({ onClose }) => {
         return 'bg-blue-500/20 border-blue-500/50 text-blue-400';
       case 'blocked':
         return 'bg-orange-500/20 border-orange-500/50 text-orange-400';
+      case 'pending_confirmation':
+        return 'bg-amber-500/15 border-amber-500/40 text-amber-300';
+    }
+  };
+
+  const getStatusLabel = (status: CourtStatus) => {
+    switch (status) {
+      case 'available':
+        return 'Libre';
+      case 'reserved':
+        return 'Reservada';
+      case 'blocked':
+        return 'Bloqueada';
+      case 'pending_confirmation':
+        return 'Pendiente';
     }
   };
 
@@ -223,7 +259,7 @@ export const ClubAgendaView: React.FC<ClubAgendaViewProps> = ({ onClose }) => {
 
           {!loading && !error && agenda && (
             <>
-              <div className="flex gap-4 justify-center mb-2">
+              <div className="flex gap-4 justify-center mb-2 flex-wrap">
                 <div className="flex items-center gap-1.5">
                   <div className="w-3 h-3 rounded-full bg-green-500/50 border border-green-500"></div>
                   <span className="text-[10px] text-gray-400 uppercase font-bold">Disponible</span>
@@ -231,6 +267,10 @@ export const ClubAgendaView: React.FC<ClubAgendaViewProps> = ({ onClose }) => {
                 <div className="flex items-center gap-1.5">
                   <div className="w-3 h-3 rounded-full bg-blue-500/50 border border-blue-500"></div>
                   <span className="text-[10px] text-gray-400 uppercase font-bold">Reservada</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-3 h-3 rounded-full bg-amber-500/50 border border-amber-500"></div>
+                  <span className="text-[10px] text-gray-400 uppercase font-bold">Pendiente</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <div className="w-3 h-3 rounded-full bg-orange-500/50 border border-orange-500"></div>
@@ -255,7 +295,7 @@ export const ClubAgendaView: React.FC<ClubAgendaViewProps> = ({ onClose }) => {
                                 <span>{slot.time.slice(0, 5)}</span>
                               </div>
                               <span className="text-[10px] uppercase font-black tracking-wider">
-                                {status === 'available' ? 'Libre' : status === 'reserved' ? 'Reservada' : 'Bloqueada'}
+                                {getStatusLabel(status)}
                               </span>
                             </div>
 
@@ -282,6 +322,24 @@ export const ClubAgendaView: React.FC<ClubAgendaViewProps> = ({ onClose }) => {
                                   </button>
                                 </>
                               )}
+
+                              {status === 'pending_confirmation' && slot.matchId != null && (
+                                <>
+                                  <button
+                                    onClick={() => void handlePendingBookingDecision(slot.matchId as number, 'approve')}
+                                    className="flex-1 bg-green-500/20 hover:bg-green-500/30 text-green-400 py-1.5 rounded-lg text-xs font-bold transition-colors"
+                                  >
+                                    Aprobar
+                                  </button>
+                                  <button
+                                    onClick={() => void handlePendingBookingDecision(slot.matchId as number, 'reject')}
+                                    className="flex-1 bg-red-500/20 hover:bg-red-500/30 text-red-300 py-1.5 rounded-lg text-xs font-bold transition-colors"
+                                  >
+                                    Rechazar
+                                  </button>
+                                </>
+                              )}
+
                               {(status === 'reserved' || status === 'blocked') && (
                                 <button
                                   onClick={() => void handleSlotAction(court.id, slot.time, 'FREE')}
@@ -321,5 +379,3 @@ export const ClubAgendaView: React.FC<ClubAgendaViewProps> = ({ onClose }) => {
     </div>
   );
 };
-
-

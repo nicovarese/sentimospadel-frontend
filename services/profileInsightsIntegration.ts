@@ -3,6 +3,7 @@ import type {
   PlayerClubRankingSummaryResponse,
   PlayerPartnerInsightResponse,
   PlayerRivalInsightResponse,
+  PreferredSide,
   UruguayCategory,
 } from './backendApi';
 
@@ -21,6 +22,22 @@ export const buildFallbackAvatar = (fullName: string): string =>
 
 export const resolveProfileAvatar = (fullName: string, photoUrl?: string | null): string =>
   photoUrl?.trim() ? photoUrl : buildFallbackAvatar(fullName);
+
+export const formatPreferredSide = (preferredSide?: PreferredSide | null): string => {
+  if (preferredSide === 'LEFT') {
+    return 'Reves';
+  }
+
+  if (preferredSide === 'RIGHT') {
+    return 'Drive';
+  }
+
+  if (preferredSide === 'BOTH') {
+    return 'Ambos lados';
+  }
+
+  return 'Sin declarar';
+};
 
 export const formatCategoryBadge = (category?: UruguayCategory | null): string =>
   category ? CATEGORY_LABELS[category] : '-';

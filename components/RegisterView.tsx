@@ -1,10 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Trophy, User, Mail, Lock, Phone, ChevronRight, ArrowLeft, Sparkles, Store, ShieldCheck, Bell, Activity } from 'lucide-react';
+import { User, Mail, Lock, Phone, ChevronRight, ArrowLeft, Sparkles, Store, ShieldCheck, Bell, Activity } from 'lucide-react';
 import { Button } from './Button';
-import { backendApi, BackendApiError, type LegalDocumentResponse, type LegalDocumentType } from '../services/backendApi';
+import { backendApi, BackendApiError, type ClubResponse, type LegalDocumentResponse, type LegalDocumentType, type PreferredSide } from '../services/backendApi';
 import { LegalDocumentModal } from './LegalDocumentModal';
 
 type AuthAccountMode = 'player' | 'club';
+
+const PREFERRED_SIDE_OPTIONS: Array<{ value: PreferredSide; label: string }> = [
+  { value: 'LEFT', label: 'Reves' },
+  { value: 'RIGHT', label: 'Drive' },
+  { value: 'BOTH', label: 'Ambos lados' },
+];
 
 interface RegisterViewProps {
   onBack: () => void;
@@ -20,6 +26,10 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ onBack, onRegister, 
     email: '',
     password: '',
     phone: '',
+    photoUrl: '',
+    preferredSide: '' as PreferredSide | '',
+    city: '',
+    representedClubId: '',
     clubCity: '',
     clubAddress: '',
     acceptTerms: false,
@@ -31,6 +41,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ onBack, onRegister, 
   const [legalLoading, setLegalLoading] = useState(true);
   const [legalError, setLegalError] = useState<string | null>(null);
   const [activeDocumentType, setActiveDocumentType] = useState<LegalDocumentType | null>(null);
+  const [clubOptions, setClubOptions] = useState<ClubResponse[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -63,6 +74,26 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ onBack, onRegister, 
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    backendApi.getClubs()
+      .then(clubs => {
+        if (!cancelled) {
+          setClubOptions(clubs);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setClubOptions([]);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const documentsByType = useMemo(() => {
     return new Map(legalDocuments.map(document => [document.type, document]));
   }, [legalDocuments]);
@@ -76,12 +107,14 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ onBack, onRegister, 
     const consentDocument = documentsByType.get('CONSENT_PREFERENCES_NOTICE');
 
     if (!termsDocument || !privacyDocument || !consentDocument) {
-      setLegalError('No se pudieron resolver las versiones legales vigentes. Reintentá en unos segundos.');
+      setLegalError('No se pudieron resolver las versiones legales vigentes. Reintenta en unos segundos.');
       return;
     }
 
     onRegister({
       ...formData,
+      preferredSide: formData.preferredSide || null,
+      representedClubId: formData.representedClubId ? Number(formData.representedClubId) : null,
       acceptedTermsVersion: termsDocument.version,
       acceptedPrivacyVersion: privacyDocument.version,
       consentPreferencesVersion: consentDocument.version,
@@ -154,6 +187,62 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ onBack, onRegister, 
               />
             </div>
 
+            {accountMode === 'player' && (
+              <>
+                <div className="relative group">
+                  <MapPinProxy className="absolute left-3 top-3.5 text-gray-500 group-focus-within:text-padel-400 transition-colors" size={20} />
+                  <input
+                    type="text"
+                    placeholder="Ciudad"
+                    className="w-full bg-dark-900/50 border border-dark-600 text-white pl-10 pr-4 py-3 rounded-xl focus:outline-none focus:border-padel-500 transition-all"
+                    value={formData.city}
+                    onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                    required
+                  />
+                </div>
+
+                <div className="relative group">
+                  <User className="absolute left-3 top-3.5 text-gray-500 group-focus-within:text-padel-400 transition-colors" size={20} />
+                  <select
+                    className="w-full appearance-none bg-dark-900/50 border border-dark-600 text-white pl-10 pr-4 py-3 rounded-xl focus:outline-none focus:border-padel-500 transition-all"
+                    value={formData.preferredSide}
+                    onChange={(e) => setFormData({ ...formData, preferredSide: e.target.value as PreferredSide | '' })}
+                    required
+                  >
+                    <option value="">Posicion</option>
+                    {PREFERRED_SIDE_OPTIONS.map(option => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="relative group">
+                  <Store className="absolute left-3 top-3.5 text-gray-500 group-focus-within:text-padel-400 transition-colors" size={20} />
+                  <select
+                    className="w-full appearance-none bg-dark-900/50 border border-dark-600 text-white pl-10 pr-4 py-3 rounded-xl focus:outline-none focus:border-padel-500 transition-all"
+                    value={formData.representedClubId}
+                    onChange={(e) => setFormData({ ...formData, representedClubId: e.target.value })}
+                  >
+                    <option value="">Club al que representas (opcional)</option>
+                    {clubOptions.map(club => (
+                      <option key={club.id} value={club.id}>{club.name} - {club.city}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="relative group">
+                  <User className="absolute left-3 top-3.5 text-gray-500 group-focus-within:text-padel-400 transition-colors" size={20} />
+                  <input
+                    type="url"
+                    placeholder="URL de foto (opcional)"
+                    className="w-full bg-dark-900/50 border border-dark-600 text-white pl-10 pr-4 py-3 rounded-xl focus:outline-none focus:border-padel-500 transition-all"
+                    value={formData.photoUrl}
+                    onChange={(e) => setFormData({ ...formData, photoUrl: e.target.value })}
+                  />
+                </div>
+              </>
+            )}
+
             {accountMode === 'club' && (
               <>
                 <div className="relative group">
@@ -172,7 +261,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ onBack, onRegister, 
                   <MapPinProxy className="absolute left-3 top-3.5 text-gray-500 group-focus-within:text-padel-400 transition-colors" size={20} />
                   <input 
                     type="text" 
-                    placeholder="Dirección (Opcional)" 
+                    placeholder="Direccion (Opcional)" 
                     className="w-full bg-dark-900/50 border border-dark-600 text-white pl-10 pr-4 py-3 rounded-xl focus:outline-none focus:border-padel-500 transition-all"
                     value={formData.clubAddress}
                     onChange={(e) => setFormData({ ...formData, clubAddress: e.target.value })}
@@ -185,7 +274,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ onBack, onRegister, 
               <Mail className="absolute left-3 top-3.5 text-gray-500 group-focus-within:text-padel-400 transition-colors" size={20} />
               <input 
                 type="email" 
-                placeholder="Correo Electrónico" 
+                placeholder="Correo Electronico" 
                 className="w-full bg-dark-900/50 border border-dark-600 text-white pl-10 pr-4 py-3 rounded-xl focus:outline-none focus:border-padel-500 transition-all"
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -197,7 +286,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ onBack, onRegister, 
                 <Phone className="absolute left-3 top-3.5 text-gray-500 group-focus-within:text-padel-400 transition-colors" size={20} />
                 <input 
                   type="tel" 
-                  placeholder="Teléfono" 
+                  placeholder="Telefono" 
                   className="w-full bg-dark-900/50 border border-dark-600 text-white pl-10 pr-4 py-3 rounded-xl focus:outline-none focus:border-padel-500 transition-all"
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
@@ -209,7 +298,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ onBack, onRegister, 
               <Lock className="absolute left-3 top-3.5 text-gray-500 group-focus-within:text-padel-400 transition-colors" size={20} />
               <input 
                 type="password" 
-                placeholder="Contraseña" 
+                placeholder="Contrasena" 
                 className="w-full bg-dark-900/50 border border-dark-600 text-white pl-10 pr-4 py-3 rounded-xl focus:outline-none focus:border-padel-500 transition-all"
                 value={formData.password}
                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}
@@ -242,7 +331,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ onBack, onRegister, 
                       required
                     />
                     <span>
-                      Acepto los <button type="button" onClick={() => setActiveDocumentType('TERMS_AND_CONDITIONS')} className="text-padel-400 font-bold hover:underline">Términos y Condiciones</button>.
+                      Acepto los <button type="button" onClick={() => setActiveDocumentType('TERMS_AND_CONDITIONS')} className="text-padel-400 font-bold hover:underline">Terminos y Condiciones</button>.
                     </span>
                   </label>
 
@@ -255,7 +344,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ onBack, onRegister, 
                       required
                     />
                     <span>
-                      Acepto la <button type="button" onClick={() => setActiveDocumentType('PRIVACY_POLICY')} className="text-padel-400 font-bold hover:underline">Política de Privacidad y Tratamiento de Datos</button>.
+                      Acepto la <button type="button" onClick={() => setActiveDocumentType('PRIVACY_POLICY')} className="text-padel-400 font-bold hover:underline">Politica de Privacidad y Tratamiento de Datos</button>.
                     </span>
                   </label>
 

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, ArrowLeft, ChevronRight, MapPin, Search, ShieldCheck, Trophy, Zap } from 'lucide-react';
 import { Match, MatchType, Club, User } from '../types';
-import { backendApi, BackendApiError, type ClubBookingAgendaResponse } from '../services/backendApi';
+import { backendApi, BackendApiError, type ClubBookingAgendaResponse, type ClubBookingMode } from '../services/backendApi';
 import { getBackendClubId } from '../services/tournamentBackendIntegration';
 import { Button } from './Button';
 
@@ -9,6 +9,9 @@ interface ClubsBookingViewProps {
   currentUser: User;
   clubs?: Club[];
   onBook?: (match: Match) => void;
+  onBack?: () => void;
+  preferredClubId?: string | null;
+  title?: string;
 }
 
 const CLUB_VISUAL_GRADIENTS = [
@@ -48,7 +51,7 @@ const buildDateOptions = () => {
     }
 
     if (index === 1) {
-      return { value, label: 'Mañana', dayLabel };
+      return { value, label: 'Manana', dayLabel };
     }
 
     const weekday = weekdayFormatter.format(date).replace('.', '');
@@ -60,10 +63,56 @@ const buildDateOptions = () => {
   });
 };
 
+const getEffectiveBookingMode = (
+  club: Club | null,
+  bookingAvailability: ClubBookingAgendaResponse | null,
+): ClubBookingMode => bookingAvailability?.bookingMode ?? club?.bookingMode ?? 'UNAVAILABLE';
+
+const getClubCardCopy = (club: Club) => {
+  switch (club.bookingMode) {
+    case 'CONFIRMATION_REQUIRED':
+      return 'Reserva desde la app con confirmacion posterior del club.';
+    case 'UNAVAILABLE':
+      return 'Este club todavia no toma reservas desde la app, pero ya esta dado de alta.';
+    case 'DIRECT':
+    default:
+      return 'Disponibilidad real de canchas y slots de 90 min.';
+  }
+};
+
+const getClubActionLabel = (club: Club) => {
+  switch (club.bookingMode) {
+    case 'CONFIRMATION_REQUIRED':
+      return 'Solicitar reserva';
+    case 'UNAVAILABLE':
+      return 'Ver estado del club';
+    case 'DIRECT':
+    default:
+      return 'Reservar con disponibilidad real';
+  }
+};
+
+const getSlotStatusLabel = (status: ClubBookingAgendaResponse['courts'][number]['slots'][number]['status']) => {
+  switch (status) {
+    case 'AVAILABLE':
+      return 'Disponible';
+    case 'BLOCKED':
+      return 'Bloqueado';
+    case 'PENDING_CONFIRMATION':
+      return 'Pendiente';
+    case 'RESERVED':
+    default:
+      return 'Reservado';
+  }
+};
+
 export const ClubsBookingView: React.FC<ClubsBookingViewProps> = ({
   currentUser,
   clubs = [],
   onBook,
+  onBack,
+  preferredClubId,
+  title = 'Reservas',
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedClub, setSelectedClub] = useState<Club | null>(null);
@@ -95,14 +144,39 @@ export const ClubsBookingView: React.FC<ClubsBookingViewProps> = ({
   }, [clubs, searchQuery]);
 
   useEffect(() => {
+    if (!preferredClubId || selectedClub) {
+      return;
+    }
+
+    const preferredClub = clubs.find(club => club.id === preferredClubId) ?? null;
+    if (preferredClub) {
+      setSelectedClub(preferredClub);
+      setSelectedDate(dateOptions[0]?.value ?? toIsoLocalDate(new Date()));
+      setSelectedSlot(null);
+      setMatchType(MatchType.COMPETITIVE);
+      setBookingAvailability(null);
+      setBookingError(null);
+    }
+  }, [clubs, dateOptions, preferredClubId, selectedClub]);
+
+  useEffect(() => {
     if (!selectedClub) {
       return;
     }
 
     const backendClubId = getBackendClubId(selectedClub.id);
+    const bookingMode = selectedClub.bookingMode ?? 'UNAVAILABLE';
     if (!backendClubId) {
       setBookingAvailability(null);
-      setBookingError('Este club todavía no tiene una reserva pública conectada al backend.');
+      setBookingError('Este club todavia no tiene una reserva publica conectada al backend.');
+      return;
+    }
+
+    if (bookingMode === 'UNAVAILABLE') {
+      setBookingAvailability(null);
+      setBookingLoading(false);
+      setBookingError(null);
+      setSelectedSlot(null);
       return;
     }
 
@@ -154,8 +228,9 @@ export const ClubsBookingView: React.FC<ClubsBookingViewProps> = ({
     }
 
     const backendClubId = getBackendClubId(selectedClub.id);
+    const bookingMode = getEffectiveBookingMode(selectedClub, bookingAvailability);
     if (!backendClubId) {
-      setBookingError('Este club todavía no tiene una reserva pública conectada al backend.');
+      setBookingError('Este club todavia no tiene una reserva publica conectada al backend.');
       return;
     }
 
@@ -175,7 +250,7 @@ export const ClubsBookingView: React.FC<ClubsBookingViewProps> = ({
       maxPlayers: 4,
       levelRange: [1, 7],
       isPrivate: false,
-      status: 'open',
+      status: bookingMode === 'CONFIRMATION_REQUIRED' ? 'pending_approval' : 'open',
       pendingPlayerIds: [],
       rejectedPlayerIds: [],
       approvedGuestIds: [],
@@ -185,6 +260,10 @@ export const ClubsBookingView: React.FC<ClubsBookingViewProps> = ({
   };
 
   if (selectedClub) {
+    const bookingMode = getEffectiveBookingMode(selectedClub, bookingAvailability);
+    const isUnavailable = bookingMode === 'UNAVAILABLE';
+    const requiresConfirmation = bookingMode === 'CONFIRMATION_REQUIRED';
+
     return (
       <div className="fixed inset-0 bg-dark-900 z-[100] flex flex-col animate-fade-in">
         <div className="px-3 py-3 flex items-center gap-3 bg-dark-800 border-b border-dark-700 shrink-0">
@@ -206,57 +285,82 @@ export const ClubsBookingView: React.FC<ClubsBookingViewProps> = ({
           <div className="bg-dark-800 rounded-2xl border border-dark-700 p-3">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-gray-400 text-[10px] uppercase font-bold tracking-wider">Reserva MVP</p>
-                <p className="text-white font-bold text-sm mt-1">Disponibilidad real del club en slots de 90 minutos.</p>
+                <p className="text-gray-400 text-[10px] uppercase font-bold tracking-wider">
+                  {isUnavailable ? 'Estado del club' : requiresConfirmation ? 'Reserva con confirmacion' : 'Reserva directa'}
+                </p>
+                <p className="text-white font-bold text-sm mt-1">
+                  {isUnavailable
+                    ? 'Este club todavia no habilita reservas en la app.'
+                    : requiresConfirmation
+                      ? 'La reserva se solicita desde la app y el club la aprueba o rechaza.'
+                      : 'Disponibilidad real del club en slots de 90 minutos.'}
+                </p>
               </div>
               <ShieldCheck size={18} className="text-padel-400 shrink-0" />
             </div>
             <p className="text-gray-400 text-xs mt-2 leading-relaxed">
-              Invitaciones, lobby privado y pagos salen cuando exista backend oficial para esos flujos.
+              {isUnavailable
+                ? 'Lo mantenemos visible para medir actividad y seguir conversaciones comerciales con ese club.'
+                : requiresConfirmation
+                  ? 'La solicitud bloquea el slot dentro de la app hasta que el club responda.'
+                  : 'Invitaciones, lobby privado y pagos salen cuando exista backend oficial para esos flujos.'}
             </p>
           </div>
 
-          <div>
-            <h3 className="text-gray-400 text-[10px] font-bold uppercase tracking-wider mb-2">Seleccioná fecha</h3>
-            <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-              {dateOptions.map(option => (
-                <button
-                  key={option.value}
-                  onClick={() => setSelectedDate(option.value)}
-                  className={`min-w-[72px] p-2 rounded-xl flex flex-col items-center gap-0.5 border transition-all ${
-                    selectedDate === option.value
-                      ? 'bg-padel-600 border-padel-500 text-white shadow-lg'
-                      : 'bg-dark-800 border-dark-700 text-gray-400'
-                  }`}
-                >
-                  <span className="text-[10px] font-medium">{option.label}</span>
-                  <span className="text-base font-bold">{option.dayLabel}</span>
-                </button>
-              ))}
-            </div>
-          </div>
+          {!isUnavailable && (
+            <>
+              <div>
+                <h3 className="text-gray-400 text-[10px] font-bold uppercase tracking-wider mb-2">Selecciona fecha</h3>
+                <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                  {dateOptions.map(option => (
+                    <button
+                      key={option.value}
+                      onClick={() => setSelectedDate(option.value)}
+                      className={`min-w-[72px] p-2 rounded-xl flex flex-col items-center gap-0.5 border transition-all ${
+                        selectedDate === option.value
+                          ? 'bg-padel-600 border-padel-500 text-white shadow-lg'
+                          : 'bg-dark-800 border-dark-700 text-gray-400'
+                      }`}
+                    >
+                      <span className="text-[10px] font-medium">{option.label}</span>
+                      <span className="text-base font-bold">{option.dayLabel}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-          <div>
-            <label className="text-gray-400 text-[10px] font-bold uppercase tracking-wider mb-1.5 block">Tipo de partido</label>
-            <div className="flex bg-dark-800 p-1 rounded-xl border border-dark-700">
-              <button
-                onClick={() => setMatchType(MatchType.COMPETITIVE)}
-                className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold transition-all flex items-center justify-center gap-1 ${
-                  matchType === MatchType.COMPETITIVE ? 'bg-amber-500 text-dark-900 shadow' : 'text-gray-400'
-                }`}
-              >
-                <Trophy size={12} /> Por puntos
-              </button>
-              <button
-                onClick={() => setMatchType(MatchType.FRIENDLY)}
-                className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold transition-all flex items-center justify-center gap-1 ${
-                  matchType === MatchType.FRIENDLY ? 'bg-blue-500 text-white shadow' : 'text-gray-400'
-                }`}
-              >
-                <Zap size={12} /> Recreativo
-              </button>
+              <div>
+                <label className="text-gray-400 text-[10px] font-bold uppercase tracking-wider mb-1.5 block">Tipo de partido</label>
+                <div className="flex bg-dark-800 p-1 rounded-xl border border-dark-700">
+                  <button
+                    onClick={() => setMatchType(MatchType.COMPETITIVE)}
+                    className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold transition-all flex items-center justify-center gap-1 ${
+                      matchType === MatchType.COMPETITIVE ? 'bg-amber-500 text-dark-900 shadow' : 'text-gray-400'
+                    }`}
+                  >
+                    <Trophy size={12} /> Por puntos
+                  </button>
+                  <button
+                    onClick={() => setMatchType(MatchType.FRIENDLY)}
+                    className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold transition-all flex items-center justify-center gap-1 ${
+                      matchType === MatchType.FRIENDLY ? 'bg-blue-500 text-white shadow' : 'text-gray-400'
+                    }`}
+                  >
+                    <Zap size={12} /> Recreativo
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+
+          {isUnavailable && (
+            <div className="bg-dark-800 rounded-2xl border border-dark-700 p-4">
+              <h3 className="text-white font-bold text-sm">Reservas no disponibles por ahora</h3>
+              <p className="text-gray-400 text-xs mt-2 leading-relaxed">
+                El club todavia no publica disponibilidad en la app. Igual lo mantenemos en el catalogo para registrar actividad y seguir el pipeline comercial.
+              </p>
             </div>
-          </div>
+          )}
 
           {bookingLoading && (
             <div className="bg-dark-800 rounded-2xl border border-dark-700 p-4 text-sm text-gray-300">
@@ -274,16 +378,16 @@ export const ClubsBookingView: React.FC<ClubsBookingViewProps> = ({
             </div>
           )}
 
-          {!bookingLoading && !bookingError && bookingAvailability && bookingAvailability.courts.length === 0 && (
+          {!isUnavailable && !bookingLoading && !bookingError && bookingAvailability && bookingAvailability.courts.length === 0 && (
             <div className="bg-dark-800 rounded-2xl border border-dark-700 p-4">
               <h3 className="text-white font-bold text-sm">Este club no tiene canchas activas</h3>
               <p className="text-gray-400 text-xs mt-1">
-                El admin del club necesita configurar al menos una cancha para abrir reservas públicas.
+                El admin del club necesita configurar al menos una cancha para abrir reservas publicas.
               </p>
             </div>
           )}
 
-          {!bookingLoading && !bookingError && bookingAvailability && bookingAvailability.courts.length > 0 && (
+          {!isUnavailable && !bookingLoading && !bookingError && bookingAvailability && bookingAvailability.courts.length > 0 && (
             <div className="space-y-3">
               {bookingAvailability.courts.map(court => (
                 <div key={court.id} className="bg-dark-800 rounded-2xl border border-dark-700 p-3">
@@ -334,7 +438,7 @@ export const ClubsBookingView: React.FC<ClubsBookingViewProps> = ({
                         >
                           <div className="font-mono text-base font-bold">{slot.time}</div>
                           <div className="text-[10px] uppercase font-bold mt-1">
-                            {slot.status === 'AVAILABLE' ? 'Disponible' : slot.status === 'BLOCKED' ? 'Bloqueado' : 'Reservado'}
+                            {getSlotStatusLabel(slot.status)}
                           </div>
                         </button>
                       );
@@ -352,22 +456,32 @@ export const ClubsBookingView: React.FC<ClubsBookingViewProps> = ({
             <p className="text-white font-bold text-sm mt-1">
               {selectedSlot
                 ? `${selectedDateOption?.label ?? 'Fecha'} ${selectedDateOption?.dayLabel ?? ''} · ${selectedSlot.courtName} · ${selectedSlot.time}`
-                : 'Seleccioná una cancha y un horario disponible'}
+                : isUnavailable
+                  ? 'Este club esta visible en catalogo pero sin reservas habilitadas'
+                  : 'Selecciona una cancha y un horario disponible'}
             </p>
             <p className="text-gray-400 text-xs mt-1">
-              {selectedSlot
-                ? `Referencia cancha completa: $ ${Math.round(selectedSlot.hourlyRateUyu * 1.5).toLocaleString('es-UY')} por 90 min`
-                : 'La reserva pública hoy crea un partido real de 4 jugadores.'}
+              {isUnavailable
+                ? 'Todavia no se puede tomar reserva desde la app en este club.'
+                : selectedSlot
+                  ? `Referencia cancha completa: $ ${Math.round(selectedSlot.hourlyRateUyu * 1.5).toLocaleString('es-UY')} por 90 min`
+                  : requiresConfirmation
+                    ? 'La solicitud genera un partido real pendiente de aprobacion del club.'
+                    : 'La reserva publica hoy crea un partido real de 4 jugadores.'}
             </p>
           </div>
           <Button
             fullWidth
             size="md"
             onClick={handleConfirmBooking}
-            disabled={!selectedSlot}
+            disabled={!selectedSlot || isUnavailable}
             className="font-bold shadow-xl shadow-padel-500/20"
           >
-            Confirmar reserva
+            {isUnavailable
+              ? 'Reservas no disponibles'
+              : requiresConfirmation
+                ? 'Solicitar reserva'
+                : 'Confirmar reserva'}
           </Button>
         </div>
       </div>
@@ -377,7 +491,23 @@ export const ClubsBookingView: React.FC<ClubsBookingViewProps> = ({
   return (
     <div className="pb-24 pt-4 px-4">
       <header className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Reservas</h1>
+        <div className="flex items-center gap-3 mb-3">
+          {onBack && (
+            <button
+              onClick={onBack}
+              className="p-2 rounded-full hover:bg-dark-700 transition-colors"
+              aria-label="Volver"
+            >
+              <ArrowLeft size={18} className="text-gray-200" />
+            </button>
+          )}
+          <div>
+            <h1 className="text-2xl font-bold text-white">{title}</h1>
+            {onBack && (
+              <p className="text-gray-400 text-xs mt-1">Elegi club, cancha y horario real desde backend.</p>
+            )}
+          </div>
+        </div>
         <div className="mt-2 relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" size={18} />
           <input
@@ -395,7 +525,7 @@ export const ClubsBookingView: React.FC<ClubsBookingViewProps> = ({
           <div className="bg-dark-800 rounded-2xl border border-dark-700 p-4">
             <h3 className="text-white font-bold text-base mb-1">No hay clubes disponibles</h3>
             <p className="text-gray-400 text-sm">
-              Cuando el backend tenga clubes cargados, aparecerán acá para reservar.
+              Cuando el backend tenga clubes cargados, apareceran aca para reservar.
             </p>
           </div>
         )}
@@ -404,7 +534,7 @@ export const ClubsBookingView: React.FC<ClubsBookingViewProps> = ({
           <div className="bg-dark-800 rounded-2xl border border-dark-700 p-4">
             <h3 className="text-white font-bold text-base mb-1">No encontramos clubes</h3>
             <p className="text-gray-400 text-sm">
-              Probá con otro nombre o una zona distinta.
+              Proba con otro nombre o una zona distinta.
             </p>
           </div>
         )}
@@ -438,24 +568,22 @@ export const ClubsBookingView: React.FC<ClubsBookingViewProps> = ({
                 </p>
                 <p className="text-gray-500 text-[11px] mb-2.5">
                   {backendClubId
-                    ? 'Disponibilidad real de canchas y slots de 90 min.'
-                    : 'Este club todavía no expone reservas públicas desde backend.'}
+                    ? getClubCardCopy(club)
+                    : 'Este club todavia no expone reservas publicas desde backend.'}
                 </p>
                 <div className="flex gap-2">
                   <Button
                     size="sm"
                     fullWidth
                     onClick={() => handleBookClick(club)}
-                    disabled={!backendClubId}
                     className="text-xs py-2"
                   >
-                    Reservar con disponibilidad real
+                    {getClubActionLabel(club)}
                   </Button>
                   <Button
                     variant="secondary"
                     size="sm"
                     onClick={() => backendClubId && handleBookClick(club)}
-                    disabled={!backendClubId}
                     className="px-3 py-2"
                   >
                     <ChevronRight size={16} />

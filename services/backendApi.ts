@@ -5,7 +5,9 @@ export type ClubVerificationRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
 export type UserRole = 'PLAYER' | 'ADMIN';
 export type RegisterAccountType = 'PLAYER' | 'CLUB';
 export type LegalDocumentType = 'TERMS_AND_CONDITIONS' | 'PRIVACY_POLICY' | 'CONSENT_PREFERENCES_NOTICE';
-export type MatchStatus = 'OPEN' | 'FULL' | 'CANCELLED' | 'RESULT_PENDING' | 'COMPLETED';
+export type ClubBookingMode = 'DIRECT' | 'CONFIRMATION_REQUIRED' | 'UNAVAILABLE';
+export type PreferredSide = 'LEFT' | 'RIGHT' | 'BOTH';
+export type MatchStatus = 'OPEN' | 'FULL' | 'PENDING_CLUB_CONFIRMATION' | 'CANCELLED' | 'RESULT_PENDING' | 'COMPLETED';
 export type MatchParticipantTeam = 'TEAM_ONE' | 'TEAM_TWO';
 export type MatchResultStatus = 'PENDING' | 'CONFIRMED' | 'REJECTED';
 export type MatchWinnerTeam = 'TEAM_ONE' | 'TEAM_TWO';
@@ -14,8 +16,20 @@ export type PendingActionType =
   | 'SUBMIT_MATCH_RESULT'
   | 'CONFIRM_MATCH_RESULT'
   | 'SUBMIT_TOURNAMENT_RESULT'
-  | 'CONFIRM_TOURNAMENT_RESULT';
+  | 'CONFIRM_TOURNAMENT_RESULT'
+  | 'MATCH_FULL'
+  | 'MATCH_CANCELLED'
+  | 'MATCH_RESULT_CONFIRMED'
+  | 'MATCH_RESULT_REJECTED'
+  | 'TOURNAMENT_LAUNCHED'
+  | 'TOURNAMENT_RESULT_CONFIRMED'
+  | 'TOURNAMENT_RESULT_REJECTED'
+  | 'CLUB_BOOKING_APPROVED'
+  | 'CLUB_BOOKING_REJECTED'
+  | 'CLUB_VERIFICATION_APPROVED'
+  | 'CLUB_VERIFICATION_REJECTED';
 export type NotificationStatus = 'UNREAD' | 'READ';
+export type PushDevicePlatform = 'ANDROID' | 'IOS' | 'WEB';
 export type TournamentStatus = 'DRAFT' | 'OPEN' | 'CLOSED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
 export type TournamentFormat = 'LEAGUE' | 'ELIMINATION' | 'AMERICANO';
 export type TournamentAmericanoType = 'FIXED' | 'DYNAMIC';
@@ -39,6 +53,10 @@ export interface RegisterRequest {
   clubName?: string | null;
   clubCity?: string | null;
   clubAddress?: string | null;
+  photoUrl?: string | null;
+  preferredSide?: PreferredSide | null;
+  city?: string | null;
+  representedClubId?: number | null;
   acceptTerms: boolean;
   acceptedTermsVersion: string;
   acceptPrivacyPolicy: boolean;
@@ -137,6 +155,11 @@ export interface MatchParticipantResponse {
   playerProfileId: number;
   userId: number;
   fullName: string;
+  currentRating: number | null;
+  currentCategory: UruguayCategory | null;
+  matchesPlayed: number | null;
+  requiresClubVerification: boolean;
+  clubVerificationStatus: ClubVerificationStatus;
   team: MatchParticipantTeam | null;
   joinedAt: string;
 }
@@ -169,6 +192,27 @@ export interface MatchResponse {
   participants: MatchParticipantResponse[];
   createdAt: string;
   updatedAt: string;
+}
+
+export interface MatchInviteLinkResponse {
+  matchId: number;
+  inviteToken: string;
+  inviteUrl: string;
+  expiresAt: string;
+}
+
+export interface MatchInvitePreviewResponse {
+  matchId: number;
+  status: MatchStatus;
+  scheduledAt: string;
+  clubId: number | null;
+  clubName: string | null;
+  courtName: string;
+  locationText: string | null;
+  createdByName: string;
+  currentPlayerCount: number;
+  maxPlayers: number;
+  expiresAt: string;
 }
 
 export interface MatchResultResponse {
@@ -208,9 +252,10 @@ export interface PlayerProfileResponse {
   userId: number;
   fullName: string;
   photoUrl: string | null;
-  preferredSide: string | null;
-  declaredLevel: string | null;
+  preferredSide: PreferredSide | null;
   city: string | null;
+  representedClubId: number | null;
+  representedClubName: string | null;
   bio: string | null;
   currentRating: number;
   currentCategory: UruguayCategory | null;
@@ -225,6 +270,15 @@ export interface PlayerProfileResponse {
   clubVerificationStatus: ClubVerificationStatus;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface UpdatePlayerProfileRequest {
+  fullName: string;
+  photoUrl?: string | null;
+  preferredSide: PreferredSide;
+  city: string;
+  representedClubId?: number | null;
+  bio?: string | null;
 }
 
 export interface PlayerClubVerificationRequestResponse {
@@ -274,11 +328,12 @@ export interface ClubResponse {
   address: string | null;
   description: string | null;
   integrated: boolean;
+  bookingMode: ClubBookingMode;
   createdAt: string;
   updatedAt: string;
 }
 
-export type ClubAgendaSlotStatus = 'AVAILABLE' | 'RESERVED' | 'BLOCKED';
+export type ClubAgendaSlotStatus = 'AVAILABLE' | 'RESERVED' | 'BLOCKED' | 'PENDING_CONFIRMATION';
 export type ClubAgendaSlotActionType = 'RESERVE' | 'BLOCK' | 'FREE';
 export type ClubQuickActionType =
   | 'NOTIFY_USERS'
@@ -359,6 +414,7 @@ export interface ClubManagementAgendaSlotResponse {
   time: string;
   status: ClubAgendaSlotStatus;
   reservedByName: string | null;
+  matchId: number | null;
 }
 
 export interface ClubBookingSlotResponse {
@@ -376,6 +432,7 @@ export interface ClubBookingCourtResponse {
 export interface ClubBookingAgendaResponse {
   clubId: number;
   clubName: string;
+  bookingMode: ClubBookingMode;
   date: string;
   courts: ClubBookingCourtResponse[];
 }
@@ -442,14 +499,33 @@ export interface RatingHistoryMatchSummaryResponse {
   score: MatchScore | null;
 }
 
+export type RatingHistorySourceType = 'SOCIAL_MATCH' | 'TOURNAMENT_MATCH';
+
+export interface RatingHistoryTournamentMatchSummaryResponse {
+  tournamentMatchId: number;
+  tournamentId: number;
+  tournamentName: string;
+  phase: TournamentMatchPhase;
+  matchStatus: TournamentMatchStatus;
+  roundLabel: string;
+  scheduledAt: string;
+  winnerTeam: MatchWinnerTeam | null;
+  score: MatchScore | null;
+  teamOne: TournamentMatchTeamResponse;
+  teamTwo: TournamentMatchTeamResponse;
+}
+
 export interface RatingHistoryEntryResponse {
   id: number;
-  matchId: number;
+  matchId: number | null;
+  tournamentMatchId: number | null;
+  sourceType: RatingHistorySourceType;
   oldRating: number;
   delta: number;
   newRating: number;
   createdAt: string;
   match: RatingHistoryMatchSummaryResponse | null;
+  tournamentMatch: RatingHistoryTournamentMatchSummaryResponse | null;
 }
 
 export interface PlayerMatchHistoryEntryResponse {
@@ -537,10 +613,58 @@ export interface NotificationResponse {
   updatedAt: string;
 }
 
+export interface NotificationPreferencesResponse {
+  activityTrackingEnabled: boolean;
+  activityTrackingUpdatedAt: string | null;
+  operationalNotificationsEnabled: boolean;
+  operationalNotificationsUpdatedAt: string | null;
+  consentPreferencesVersion: string | null;
+}
+
+export interface UpdateNotificationPreferencesRequest {
+  allowActivityTracking: boolean;
+  allowOperationalNotifications: boolean;
+  consentPreferencesVersion: string;
+}
+
+export interface AccountDeletionRequest {
+  reason?: string | null;
+}
+
+export interface AccountDeletionResponse {
+  requested: boolean;
+  requestedAt: string | null;
+  message: string;
+}
+
+export interface PushDeviceRegistrationRequest {
+  installationId: string;
+  platform: PushDevicePlatform;
+  pushToken: string;
+}
+
+export interface PushDeviceUnregisterRequest {
+  installationId: string;
+}
+
+export interface PushDeviceResponse {
+  installationId: string;
+  platform: PushDevicePlatform;
+  active: boolean;
+  lastSeenAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface TournamentEntryMemberResponse {
   playerProfileId: number;
   userId: number;
   fullName: string;
+  currentRating: number | null;
+  currentCategory: UruguayCategory | null;
+  matchesPlayed: number | null;
+  requiresClubVerification: boolean;
+  clubVerificationStatus: ClubVerificationStatus;
 }
 
 export interface TournamentEntryResponse {
@@ -560,6 +684,7 @@ export interface TournamentResponse {
   description: string | null;
   clubId: number | null;
   city: string | null;
+  categoryLabels: string[];
   startDate: string;
   endDate: string | null;
   status: TournamentStatus;
@@ -601,6 +726,7 @@ export interface CreateTournamentRequest {
   description?: string | null;
   clubId?: number | null;
   city?: string | null;
+  categoryLabels?: string[];
   startDate: string;
   endDate?: string | null;
   format: TournamentFormat;
@@ -625,6 +751,73 @@ export interface LaunchTournamentRequest {
   numberOfGroups?: number | null;
   leagueRounds?: number | null;
   courtNames?: string[];
+}
+
+export interface TournamentLaunchPreviewTeamResponse {
+  teamName: string;
+  memberNames: string[];
+}
+
+export interface TournamentLaunchPreviewGroupResponse {
+  name: string;
+  teams: TournamentLaunchPreviewTeamResponse[];
+}
+
+export interface TournamentLaunchPreviewMatchResponse {
+  phase: TournamentMatchPhase;
+  roundLabel: string;
+  teamOneLabel: string;
+  teamTwoLabel: string;
+  scheduledAt: string;
+  courtName: string;
+  placeholder: boolean;
+}
+
+export interface TournamentLaunchPreviewResponse {
+  availableCourts: number;
+  numberOfGroups: number;
+  leagueRounds: number;
+  courtNames: string[];
+  groups: TournamentLaunchPreviewGroupResponse[];
+  stageMatches: TournamentLaunchPreviewMatchResponse[];
+  playoffMatches: TournamentLaunchPreviewMatchResponse[];
+}
+
+export interface TournamentInviteLinkResponse {
+  tournamentId: number;
+  inviteToken: string;
+  inviteUrl: string;
+  expiresAt: string;
+}
+
+export interface TournamentInvitePreviewResponse {
+  tournamentId: number;
+  name: string;
+  status: TournamentStatus;
+  format: TournamentFormat;
+  openEnrollment: boolean;
+  competitive: boolean;
+  creatorName: string;
+  clubId: number | null;
+  clubName: string | null;
+  city: string | null;
+  categoryLabels: string[];
+  startDate: string;
+  endDate: string | null;
+  currentEntriesCount: number;
+  currentPlayersCount: number;
+  maxEntries: number | null;
+  expiresAt: string;
+}
+
+export interface UpsertMyTournamentEntryRequest {
+  teamName?: string | null;
+  secondaryPlayerProfileId?: number | null;
+  timePreferences?: string[];
+}
+
+export interface UpdateTournamentEntryTeamNameRequest {
+  teamName: string;
 }
 
 export interface TournamentMatchTeamResponse {
@@ -728,7 +921,21 @@ export class BackendApiError extends Error {
 export const ACCESS_TOKEN_STORAGE_KEY = 'sentimos.accessToken';
 
 const DEFAULT_API_BASE_URL = 'http://localhost:8081';
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || DEFAULT_API_BASE_URL).replace(/\/+$/, '');
+
+const resolveApiBaseUrl = (): string => {
+  const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim();
+  if (configuredBaseUrl) {
+    return configuredBaseUrl.replace(/\/+$/, '');
+  }
+
+  if (import.meta.env.MODE === 'development') {
+    return DEFAULT_API_BASE_URL;
+  }
+
+  throw new Error(`VITE_API_BASE_URL no esta configurada para el modo ${import.meta.env.MODE}.`);
+};
+
+const API_BASE_URL = resolveApiBaseUrl();
 
 type RequestOptions = RequestInit & {
   auth?: boolean;
@@ -757,7 +964,8 @@ export const clearAccessToken = (): void => {
 
 async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const headers = new Headers(options.headers);
-  const shouldSendJson = options.body !== undefined && !headers.has('Content-Type');
+  const isFormDataBody = typeof FormData !== 'undefined' && options.body instanceof FormData;
+  const shouldSendJson = options.body !== undefined && !headers.has('Content-Type') && !isFormDataBody;
   const token = options.token ?? getStoredAccessToken();
 
   if (shouldSendJson) {
@@ -904,6 +1112,16 @@ export const backendApi = {
       body: JSON.stringify(request),
     }),
 
+  approveMyClubBookingRequest: (matchId: number) =>
+    apiRequest<ClubManagementAgendaResponse>(`/api/clubs/me/management/booking-requests/${matchId}/approve`, {
+      method: 'POST',
+    }),
+
+  rejectMyClubBookingRequest: (matchId: number) =>
+    apiRequest<ClubManagementAgendaResponse>(`/api/clubs/me/management/booking-requests/${matchId}/reject`, {
+      method: 'POST',
+    }),
+
   executeMyClubQuickAction: (request: ClubQuickActionRequest) =>
     apiRequest<ClubQuickActionResponse>('/api/clubs/me/management/quick-actions', {
       method: 'POST',
@@ -917,6 +1135,22 @@ export const backendApi = {
 
   getMyPlayerProfile: () =>
     apiRequest<PlayerProfileResponse>('/api/players/me'),
+
+  updateMyPlayerProfile: (request: UpdatePlayerProfileRequest) =>
+    apiRequest<PlayerProfileResponse>('/api/players/me', {
+      method: 'PUT',
+      body: JSON.stringify(request),
+    }),
+
+  uploadMyPlayerProfilePhoto: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    return apiRequest<PlayerProfileResponse>('/api/players/me/photo', {
+      method: 'POST',
+      body: formData,
+    });
+  },
 
   getMyClubVerification: () =>
     apiRequest<PlayerClubVerificationSummaryResponse>('/api/players/me/club-verification'),
@@ -960,6 +1194,36 @@ export const backendApi = {
       method: 'POST',
     }),
 
+  getMyNotificationPreferences: () =>
+    apiRequest<NotificationPreferencesResponse>('/api/notifications/preferences'),
+
+  updateMyNotificationPreferences: (request: UpdateNotificationPreferencesRequest) =>
+    apiRequest<NotificationPreferencesResponse>('/api/notifications/preferences', {
+      method: 'PUT',
+      body: JSON.stringify(request),
+    }),
+
+  getMyAccountDeletionRequest: () =>
+    apiRequest<AccountDeletionResponse>('/api/account/deletion-request'),
+
+  requestMyAccountDeletion: (request: AccountDeletionRequest) =>
+    apiRequest<AccountDeletionResponse>('/api/account/deletion-request', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    }),
+
+  registerPushDevice: (request: PushDeviceRegistrationRequest) =>
+    apiRequest<PushDeviceResponse>('/api/notifications/devices/register', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    }),
+
+  unregisterPushDevice: (request: PushDeviceUnregisterRequest) =>
+    apiRequest<PushDeviceResponse>('/api/notifications/devices/unregister', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    }),
+
   getRankings: () =>
     apiRequest<RankingEntryResponse[]>('/api/rankings', {
       auth: false,
@@ -978,6 +1242,16 @@ export const backendApi = {
 
   getMatch: (matchId: number) =>
     apiRequest<MatchResponse>(`/api/matches/${matchId}`, {
+      auth: false,
+    }),
+
+  createMatchInviteLink: (matchId: number) =>
+    apiRequest<MatchInviteLinkResponse>(`/api/matches/${matchId}/invite-link`, {
+      method: 'POST',
+    }),
+
+  resolveMatchInvite: (token: string) =>
+    apiRequest<MatchInvitePreviewResponse>(`/api/matches/invite?token=${encodeURIComponent(token)}`, {
       auth: false,
     }),
 
@@ -1040,9 +1314,26 @@ export const backendApi = {
       auth: false,
     }),
 
-  joinTournament: (tournamentId: number) =>
+  createTournamentInviteLink: (tournamentId: number) =>
+    apiRequest<TournamentInviteLinkResponse>(`/api/tournaments/${tournamentId}/invite-link`, {
+      method: 'POST',
+    }),
+
+  resolveTournamentInvite: (token: string) =>
+    apiRequest<TournamentInvitePreviewResponse>(`/api/tournaments/invite?token=${encodeURIComponent(token)}`, {
+      auth: false,
+    }),
+
+  joinTournament: (tournamentId: number, request?: UpsertMyTournamentEntryRequest) =>
     apiRequest<TournamentResponse>(`/api/tournaments/${tournamentId}/join`, {
       method: 'POST',
+      body: request == null ? undefined : JSON.stringify(request),
+    }),
+
+  updateMyTournamentEntry: (tournamentId: number, request: UpsertMyTournamentEntryRequest) =>
+    apiRequest<TournamentResponse>(`/api/tournaments/${tournamentId}/entries/me`, {
+      method: 'PUT',
+      body: JSON.stringify(request),
     }),
 
   leaveTournament: (tournamentId: number) =>
@@ -1053,6 +1344,18 @@ export const backendApi = {
   syncTournamentEntries: (tournamentId: number, request: SyncTournamentEntriesRequest) =>
     apiRequest<TournamentResponse>(`/api/tournaments/${tournamentId}/entries`, {
       method: 'PUT',
+      body: JSON.stringify(request),
+    }),
+
+  updateMyTournamentEntryTeamName: (tournamentId: number, request: UpdateTournamentEntryTeamNameRequest) =>
+    apiRequest<TournamentResponse>(`/api/tournaments/${tournamentId}/entries/me/team-name`, {
+      method: 'PUT',
+      body: JSON.stringify(request),
+    }),
+
+  previewTournamentLaunch: (tournamentId: number, request: LaunchTournamentRequest) =>
+    apiRequest<TournamentLaunchPreviewResponse>(`/api/tournaments/${tournamentId}/launch-preview`, {
+      method: 'POST',
       body: JSON.stringify(request),
     }),
 

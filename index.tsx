@@ -1,6 +1,8 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import './index.css';
 import App from './App';
+import { installNativeUrlListener, syncInitialNativeUrl } from './services/mobileRuntime';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -8,8 +10,16 @@ if (!rootElement) {
 }
 
 const root = ReactDOM.createRoot(rootElement);
-root.render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
+
+const bootstrap = async () => {
+  await syncInitialNativeUrl();
+  await installNativeUrlListener();
+
+  root.render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>
+  );
+};
+
+void bootstrap();

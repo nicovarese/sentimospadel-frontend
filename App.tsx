@@ -16,13 +16,37 @@ import { ClubsBookingView } from './components/ClubsBookingView';
 import { ClubVerificationRequestsView } from './components/ClubVerificationRequestsView';
 import { PlayerClubVerificationView } from './components/PlayerClubVerificationView';
 import { PublicProfileView } from './components/PublicProfileView';
+import { PlayerProfileEditView } from './components/PlayerProfileEditView';
+import { MatchInvitePreviewPanel } from './components/MatchInvitePreviewPanel';
+import { TournamentInvitePreviewPanel } from './components/TournamentInvitePreviewPanel';
+import { TournamentRegistrationView } from './components/TournamentRegistrationView';
 import { computeMatchRatingUpdatesElo, EloMatchInput } from './utils/eloCalculator';
-import { ACCESS_TOKEN_STORAGE_KEY, backendApi, BackendApiError, clearAccessToken, storeAccessToken, type MyMatchesScope, type NotificationResponse, type PendingActionResponse } from './services/backendApi';
+import {
+    ACCESS_TOKEN_STORAGE_KEY,
+    backendApi,
+    BackendApiError,
+    clearAccessToken,
+    storeAccessToken,
+    type AccountDeletionResponse,
+    type MatchInviteLinkResponse,
+    type MatchInvitePreviewResponse,
+    type MyMatchesScope,
+    type NotificationPreferencesResponse,
+    type NotificationResponse,
+    type PendingActionResponse,
+    type TournamentStandingsTiebreak,
+    type TournamentInviteLinkResponse,
+    type TournamentInvitePreviewResponse,
+    type UpsertMyTournamentEntryRequest,
+    type UpdatePlayerProfileRequest,
+} from './services/backendApi';
 import { buildFrontendUser, clearStoredDisplayName, isNotFoundError, readStoredDisplayName, storeDisplayName, toFrontendVerificationStatus } from './services/authOnboardingSession';
 import { buildAutoTeamAssignments, buildClubLookup, buildSubmitResultRequest, combineFrontendMatchDateTime, isBackendManagedMatch, isBackendMatchCreator, mapScopedPlayerMatches, mergeBackendMatches } from './services/matchBackendIntegration';
 import { buildActionableResultMatches, buildActionableResultMatchesById, getUnreadNotificationsCount } from './services/pendingActionIntegration';
-import { formatCategoryBadge, formatClubRankingPrimaryValue, getFavoriteClubRanking, getTopPartner, getTopRival, resolveProfileAvatar } from './services/profileInsightsIntegration';
+import { formatCategoryBadge, formatClubRankingPrimaryValue, formatPreferredSide, getFavoriteClubRanking, getTopPartner, getTopRival, resolveProfileAvatar } from './services/profileInsightsIntegration';
 import { findRankingPosition, mapRankingRows, mapRatingHistory } from './services/ratingHistoryIntegration';
+import { MOBILE_URL_EVENT_NAME } from './services/mobileRuntime';
+import { PUSH_OPENED_EVENT_NAME, registerNativePushDevice, unregisterNativePushDevice } from './services/mobilePushNotifications';
 import {
     buildCreateBackendTournamentRequest,
     buildSubmitTournamentResultRequest,
@@ -37,7 +61,7 @@ import {
     toFrontendTournament,
     toFrontendTournamentMatches,
 } from './services/tournamentBackendIntegration';
-import { Plus, Search, Filter, Trophy, Star, TrendingUp, Calendar, MapPin, ChevronRight, ChevronDown, ChevronLeft, BarChart3, Settings, Users, Zap, GraduationCap, Swords, Clock, CheckCircle, AlertCircle, AlertTriangle, CalendarRange, Sparkles, Bell, BadgeCheck, Lock, TrendingDown, ArrowLeft, Info, Check, Share2, Wallet, UserPlus, Grid, X, Crown, BrainCircuit, Medal, Handshake, Skull, List, Gift, Network, Link, Copy, Trash2, Store, DollarSign, Archive, ShieldCheck } from 'lucide-react';
+import { Plus, Search, Filter, Trophy, Star, TrendingUp, Calendar, MapPin, ChevronRight, ChevronDown, ChevronLeft, BarChart3, Settings, Users, Zap, GraduationCap, Swords, Clock, CheckCircle, AlertCircle, AlertTriangle, CalendarRange, Sparkles, Bell, BadgeCheck, Lock, TrendingDown, ArrowLeft, Info, Check, Share2, Wallet, UserPlus, Grid, X, Crown, BrainCircuit, Medal, Handshake, Skull, List, Gift, Network, Link, Copy, Trash2, Store, DollarSign, Archive, ShieldCheck, Pencil } from 'lucide-react';
 import { LineChart, Line, XAxis, Tooltip, ResponsiveContainer, YAxis, CartesianGrid, LabelList } from 'recharts';
 
 // --- MOCK DATA ---
@@ -61,292 +85,8 @@ const MOCK_USER: User = {
   isPremium: false
 };
 
-const MOCK_FRIENDS = [
-    { id: 'u2', name: 'Martin G.', level: 4.4, avatar: 'https://picsum.photos/100/100?r=2', frequent: true },
-    { id: 'u3', name: 'Felipe R.', level: 4.6, avatar: 'https://picsum.photos/100/100?r=3', frequent: true },
-    { id: 'u5', name: 'Diego F.', level: 5.0, avatar: 'https://picsum.photos/100/100?r=5', frequent: false },
-    { id: 'u9', name: 'Juan B.', level: 4.5, avatar: 'https://picsum.photos/100/100?r=9', frequent: false },
-    { id: 'd1', name: 'Carlos M.', level: 4.1, avatar: 'https://picsum.photos/100/100?r=101', frequent: false },
-    { id: 'd2', name: 'Andres T.', level: 4.3, avatar: 'https://picsum.photos/100/100?r=102', frequent: false },
-    { id: 'd3', name: 'Javier L.', level: 4.8, avatar: 'https://picsum.photos/100/100?r=103', frequent: false },
-    { id: 'd4', name: 'Matias P.', level: 4.2, avatar: 'https://picsum.photos/100/100?r=104', frequent: false },
-    { id: 'd5', name: 'Nicolas R.', level: 4.9, avatar: 'https://picsum.photos/100/100?r=105', frequent: false },
-    { id: 'd6', name: 'Sebastian V.', level: 4.5, avatar: 'https://picsum.photos/100/100?r=106', frequent: false },
-    { id: 'd7', name: 'Gonzalo H.', level: 4.7, avatar: 'https://picsum.photos/100/100?r=107', frequent: false },
-    { id: 'd8', name: 'Rodrigo C.', level: 4.0, avatar: 'https://picsum.photos/100/100?r=108', frequent: false },
-    { id: 'd9', name: 'Facundo D.', level: 4.6, avatar: 'https://picsum.photos/100/100?r=109', frequent: false },
-    { id: 'd10', name: 'Ignacio S.', level: 4.4, avatar: 'https://picsum.photos/100/100?r=110', frequent: false },
-    { id: 'd11', name: 'Joaquin G.', level: 4.2, avatar: 'https://picsum.photos/100/100?r=111', frequent: false },
-    { id: 'd12', name: 'Agustin F.', level: 4.5, avatar: 'https://picsum.photos/100/100?r=112', frequent: false },
-    { id: 'd13', name: 'Emiliano K.', level: 4.8, avatar: 'https://picsum.photos/100/100?r=113', frequent: false },
-    { id: 'd14', name: 'Federico N.', level: 4.1, avatar: 'https://picsum.photos/100/100?r=114', frequent: false },
-    { id: 'd15', name: 'Tomas W.', level: 4.9, avatar: 'https://picsum.photos/100/100?r=115', frequent: false },
-];
 
-const MOCK_TOP_PARTNERS = [
-    { id: 'u2', name: 'Martin G.', avatar: 'https://picsum.photos/100/100?r=2', matchesWon: 12, ratingGained: 1.45 },
-    { id: 'u3', name: 'Felipe R.', avatar: 'https://picsum.photos/100/100?r=3', matchesWon: 8, ratingGained: 0.96 },
-    { id: 'u5', name: 'Diego F.', avatar: 'https://picsum.photos/100/100?r=5', matchesWon: 5, ratingGained: 0.60 },
-    { id: 'u6', name: 'Pablo S.', avatar: 'https://picsum.photos/100/100?r=6', matchesWon: 3, ratingGained: 0.32 },
-    { id: 'u7', name: 'Lucas M.', avatar: 'https://picsum.photos/100/100?r=7', matchesWon: 2, ratingGained: 0.24 },
-];
 
-const MOCK_TOP_RIVALS = [
-    { id: 'u9', name: 'Juan B.', avatar: 'https://picsum.photos/100/100?r=9', matchesLost: 8, ratingLost: 1.10 },
-    { id: 'u10', name: 'Pedro X.', avatar: 'https://picsum.photos/100/100?r=10', matchesLost: 6, ratingLost: 0.85 },
-    { id: 'u11', name: 'Luis Z.', avatar: 'https://picsum.photos/100/100?r=11', matchesLost: 4, ratingLost: 0.52 },
-    { id: 'u12', name: 'Ana P.', avatar: 'https://picsum.photos/100/100?r=31', matchesLost: 3, ratingLost: 0.40 },
-    { id: 'u13', name: 'Gaston B.', avatar: 'https://picsum.photos/100/100?r=40', matchesLost: 2, ratingLost: 0.28 },
-];
-
-const MOCK_CLUBS: Club[] = [
-  { id: 'c1', name: 'Top Padel', location: 'Av. Rivera 6000', rating: 5.0, isPremium: true, courtsAvailable: 8, image: 'https://picsum.photos/400/200?random=1' },
-  { id: 'c2', name: 'World Padel', location: 'Ellauri 350', rating: 4.6, isPremium: true, courtsAvailable: 6, image: 'https://picsum.photos/400/200?random=2' },
-  { id: 'c3', name: 'Cordon Padel', location: 'Galicia 1234', rating: 4.4, isPremium: false, courtsAvailable: 4, image: 'https://picsum.photos/400/200?random=3' },
-  { id: 'c4', name: 'Boss', location: 'Av. Brasil 2000', rating: 4.7, isPremium: false, courtsAvailable: 5, image: 'https://picsum.photos/400/200?random=4' },
-  { id: 'c5', name: 'Reducto', location: 'San Martín 2500', rating: 4.3, isPremium: false, courtsAvailable: 3, image: 'https://picsum.photos/400/200?random=5' },
-];
-
-// Mock Data for Club Rankings
-interface RankingEntry {
-    rank: number;
-    name: string;
-    avatar: string;
-    primaryValue: string; // "Rating 6.0" or "540 pts"
-    secondaryValue: string; // "32 W" or "32 partidos"
-    isUser: boolean;
-}
-
-interface ClubRankingData {
-    clubName: string;
-    matchesPlayedByUser: number;
-    competitive: {
-        userRank: number;
-        userPrimaryValue: string;
-        userSecondaryValue: string;
-        label: string;
-        topList: RankingEntry[];
-    };
-    social: {
-        userRank: number;
-        userPrimaryValue: string;
-        userSecondaryValue: string;
-        label: string;
-        topList: RankingEntry[];
-    };
-}
-
-const MOCK_CLUB_RANKINGS: ClubRankingData[] = [
-    {
-        clubName: 'Top Padel',
-        matchesPlayedByUser: 32,
-        competitive: {
-            userRank: 52, // User requested position 52
-            userPrimaryValue: '4.50',
-            userSecondaryValue: '14 Victorias',
-            label: 'Rating',
-            topList: [
-                { rank: 1, name: 'Agustin T.', avatar: 'https://picsum.photos/100/100?r=20', primaryValue: '6.05', secondaryValue: '42 Victorias', isUser: false },
-                { rank: 2, name: 'Fede C.', avatar: 'https://picsum.photos/100/100?r=21', primaryValue: '5.98', secondaryValue: '38 Victorias', isUser: false },
-                { rank: 3, name: 'Lucas M.', avatar: 'https://picsum.photos/100/100?r=22', primaryValue: '5.92', secondaryValue: '35 Victorias', isUser: false },
-                { rank: 4, name: 'Gaston B.', avatar: 'https://picsum.photos/100/100?r=40', primaryValue: '5.85', secondaryValue: '28 Victorias', isUser: false },
-                { rank: 5, name: 'Diego F.', avatar: 'https://picsum.photos/100/100?r=5', primaryValue: '5.70', secondaryValue: '22 Victorias', isUser: false },
-                { rank: 6, name: 'Juan B.', avatar: 'https://picsum.photos/100/100?r=9', primaryValue: '5.65', secondaryValue: '20 Victorias', isUser: false },
-                { rank: 7, name: 'Pablo S.', avatar: 'https://picsum.photos/100/100?r=6', primaryValue: '5.50', secondaryValue: '18 Victorias', isUser: false },
-            ]
-        },
-        social: {
-            userRank: 5,
-            userPrimaryValue: '320',
-            userSecondaryValue: '32 Partidos',
-            label: 'Puntos',
-            topList: [
-                { rank: 1, name: 'Pedro X.', avatar: 'https://picsum.photos/100/100?r=30', primaryValue: '540', secondaryValue: '54 Partidos', isUser: false },
-                { rank: 2, name: 'Ana P.', avatar: 'https://picsum.photos/100/100?r=31', primaryValue: '480', secondaryValue: '48 Partidos', isUser: false },
-                { rank: 3, name: 'Martin G.', avatar: 'https://picsum.photos/100/100?r=32', primaryValue: '450', secondaryValue: '45 Partidos', isUser: false },
-            ]
-        }
-    },
-    {
-        clubName: 'World Padel',
-        matchesPlayedByUser: 24,
-        competitive: {
-            userRank: 89,
-            userPrimaryValue: '4.50',
-            userSecondaryValue: '8 Victorias',
-            label: 'Rating',
-            topList: [
-                { rank: 1, name: 'Ale G.', avatar: 'https://picsum.photos/100/100?r=41', primaryValue: '6.12', secondaryValue: '48 Victorias', isUser: false },
-                { rank: 2, name: 'Nico S.', avatar: 'https://picsum.photos/100/100?r=42', primaryValue: '6.05', secondaryValue: '45 Victorias', isUser: false },
-                { rank: 3, name: 'Pablo R.', avatar: 'https://picsum.photos/100/100?r=43', primaryValue: '5.95', secondaryValue: '40 Victorias', isUser: false },
-            ]
-        },
-        social: {
-            userRank: 12,
-            userPrimaryValue: '240',
-            userSecondaryValue: '24 Partidos',
-            label: 'Puntos',
-            topList: [
-                { rank: 1, name: 'Luis Z.', avatar: 'https://picsum.photos/100/100?r=50', primaryValue: '800', secondaryValue: '80 Partidos', isUser: false },
-                { rank: 2, name: 'Maria F.', avatar: 'https://picsum.photos/100/100?r=51', primaryValue: '760', secondaryValue: '76 Partidos', isUser: false },
-                { rank: 3, name: 'Jose L.', avatar: 'https://picsum.photos/100/100?r=52', primaryValue: '720', secondaryValue: '72 Partidos', isUser: false },
-            ]
-        }
-    }
-];
-
-const INITIAL_MATCHES: Match[] = [
-  // ... Existing open/confirmed matches ...
-  {
-    id: 'm1',
-    clubId: 'c1',
-    courtName: 'Cancha Central (WPT)',
-    date: new Date().toISOString(),
-    time: '18:30',
-    duration: 90,
-    type: MatchType.COMPETITIVE,
-    pricePerPlayer: 450,
-    currency: 'UYU',
-    players: [
-      { id: 'u2', name: 'Martin G.', level: 4.4, avatar: 'https://picsum.photos/100/100?r=2' } as User,
-      { id: 'u3', name: 'Felipe R.', level: 4.6, avatar: 'https://picsum.photos/100/100?r=3' } as User,
-      null,
-      null
-    ],
-    maxPlayers: 4,
-    levelRange: [4.0, 5.0], 
-    isPrivate: false,
-    status: 'open',
-    pendingPlayerIds: [],
-    rejectedPlayerIds: [],
-    approvedGuestIds: []
-  },
-  {
-    id: 'm2',
-    clubId: 'c2',
-    courtName: 'Cancha 2',
-    date: new Date().toISOString(),
-    time: '20:00',
-    duration: 60,
-    type: MatchType.FRIENDLY,
-    pricePerPlayer: 350,
-    currency: 'UYU',
-    players: [
-        { id: 'u4', name: 'Ana P.', level: 3.0, avatar: 'https://picsum.photos/100/100?r=4' } as User,
-        null,
-        null,
-        null
-    ],
-    maxPlayers: 4,
-    levelRange: [2.5, 3.5], 
-    isPrivate: false,
-    status: 'open',
-    pendingPlayerIds: [],
-    rejectedPlayerIds: [],
-    approvedGuestIds: []
-  },
-  {
-    id: 'm3',
-    clubId: 'c3',
-    courtName: 'Cancha Panorámica',
-    date: new Date().toISOString(),
-    time: '21:30',
-    duration: 90,
-    type: MatchType.COMPETITIVE,
-    pricePerPlayer: 500,
-    currency: 'UYU',
-    players: [
-        { id: 'u5', name: 'Diego F.', level: 5.0, avatar: 'https://picsum.photos/100/100?r=5' } as User,
-        { id: 'u6', name: 'Pablo S.', level: 5.1, avatar: 'https://picsum.photos/100/100?r=6' } as User,
-        { id: 'u7', name: 'Lucas M.', level: 4.9, avatar: 'https://picsum.photos/100/100?r=7' } as User,
-        { id: 'u8', name: 'Santi L.', level: 5.0, avatar: 'https://picsum.photos/100/100?r=8' } as User,
-    ],
-    maxPlayers: 4,
-    levelRange: [4.8, 5.2],
-    isPrivate: true,
-    status: 'confirmed',
-    pendingPlayerIds: [],
-    rejectedPlayerIds: [],
-    approvedGuestIds: []
-  },
-  // --- NEW MATCH FOR RESULT FLOW ---
-  {
-    id: 'm4',
-    clubId: 'c1',
-    courtName: 'Cancha 3',
-    date: new Date(Date.now() - 86400000).toISOString(), // Yesterday
-    time: '19:00',
-    duration: 90,
-    type: MatchType.COMPETITIVE,
-    pricePerPlayer: 450,
-    currency: 'UYU',
-    players: [
-        { id: 'u1', name: 'Santiago López', level: 4.5, avatar: 'https://picsum.photos/100/100?r=1' } as User,
-        { id: 'u9', name: 'Juan B.', level: 4.5, avatar: 'https://picsum.photos/100/100?r=9' } as User,
-        { id: 'u10', name: 'Pedro X.', level: 4.6, avatar: 'https://picsum.photos/100/100?r=10' } as User,
-        { id: 'u11', name: 'Luis Z.', level: 4.4, avatar: 'https://picsum.photos/100/100?r=11' } as User,
-    ],
-    maxPlayers: 4,
-    levelRange: [4.0, 5.0],
-    isPrivate: false,
-    status: 'awaiting_result', // Trigger Result Card
-    pendingPlayerIds: [],
-    rejectedPlayerIds: [],
-    approvedGuestIds: []
-  },
-  {
-    id: 'm5',
-    clubId: 'c2',
-    courtName: 'Cancha 1',
-    date: new Date(Date.now() - 172800000).toISOString(), // 2 days ago
-    time: '20:30',
-    duration: 90,
-    type: MatchType.COMPETITIVE,
-    pricePerPlayer: 400,
-    currency: 'UYU',
-    players: [
-        { id: 'u12', name: 'Carlos M.', level: 4.7, avatar: 'https://picsum.photos/100/100?r=12' } as User,
-        { id: 'u13', name: 'Andres G.', level: 4.8, avatar: 'https://picsum.photos/100/100?r=13' } as User,
-        { id: 'u1', name: 'Santiago López', level: 4.5, avatar: 'https://picsum.photos/100/100?r=1' } as User,
-        { id: 'u14', name: 'Matias R.', level: 4.6, avatar: 'https://picsum.photos/100/100?r=14' } as User,
-    ],
-    maxPlayers: 4,
-    levelRange: [4.0, 5.0],
-    isPrivate: false,
-    status: 'awaiting_validation', // Trigger Validation Card
-    result: [[6, 4], [4, 6], [6, 3]],
-    resultSubmittedBy: 'u12',
-    pendingPlayerIds: [],
-    rejectedPlayerIds: [],
-    approvedGuestIds: []
-  },
-  {
-    id: 'm-tournament-1',
-    clubId: 'c1',
-    courtName: 'Cancha 1',
-    date: new Date().toISOString(),
-    time: '18:00',
-    duration: 90,
-    type: MatchType.COMPETITIVE,
-    pricePerPlayer: 0,
-    currency: 'UYU',
-    players: [
-      { id: 'u1', name: 'Martin G.', level: 4.4, avatar: 'https://picsum.photos/100/100?r=1' } as User,
-      { id: 'u3', name: 'Felipe R.', level: 4.6, avatar: 'https://picsum.photos/100/100?r=3' } as User,
-      { id: 'u5', name: 'Diego F.', level: 5.0, avatar: 'https://picsum.photos/100/100?r=5' } as User,
-      { id: 'u6', name: 'Pablo S.', level: 5.1, avatar: 'https://picsum.photos/100/100?r=6' } as User,
-    ],
-    maxPlayers: 4,
-    levelRange: [4.0, 5.5],
-    isPrivate: true,
-    status: 'awaiting_validation',
-    tournamentId: 'mock-t-2',
-    result: [[6, 4], [6, 2]],
-    pendingPlayerIds: [],
-    rejectedPlayerIds: [],
-    approvedGuestIds: []
-  }
-];
 
 // --- AGENDA MOCK DATA ---
 type AgendaStatus = 'confirmed' | 'pending_players' | 'pending_approval' | 'scheduled';
@@ -362,29 +102,6 @@ interface AgendaItem {
     status: AgendaStatus;
     meta?: string; // "3/4 Jugadores", "Instructor: Pablo", etc.
 }
-
-const INITIAL_AGENDA: AgendaItem[] = [
-    {
-        id: 'a2',
-        type: 'class',
-        title: 'Clase Técnica (Voleas)',
-        location: 'World Padel',
-        date: 'Mañana',
-        time: '09:00',
-        status: 'scheduled',
-        meta: 'Coach: Agus T.'
-    },
-    {
-        id: 'a4',
-        type: 'tournament',
-        title: 'Copa Montevideo',
-        location: 'Top Padel',
-        date: '15-17 Nov',
-        time: 'Todo el día',
-        status: 'confirmed',
-        meta: 'Cat. 4ta'
-    }
-];
 
 // Helper to generate history with proper dates
 const generateHistory = () => {
@@ -415,6 +132,19 @@ const generateHistory = () => {
 };
 
 const MATCH_ELO_HISTORY = generateHistory();
+
+const ENABLE_LEGACY_LOCAL_RATING = import.meta.env.MODE === 'development';
+const ENABLE_LEGACY_LOCAL_FLOWS = import.meta.env.MODE === 'development';
+const IS_PRODUCTION_LIKE_ENV = import.meta.env.MODE === 'staging' || import.meta.env.MODE === 'production';
+
+const criticalRefreshFallback = <T,>(fallback: T) => (error: unknown): T => {
+  if (IS_PRODUCTION_LIKE_ENV) {
+    throw error;
+  }
+
+  console.warn('Critical refresh fallback used in development.', error);
+  return fallback;
+};
 
 
 // Helper to determine category based on level (1 is Best/Pro)
@@ -448,6 +178,96 @@ const getClubInitials = (clubName: string) =>
         .map(word => word.charAt(0).toUpperCase())
         .join('') || 'CL';
 
+const MATCH_INVITE_QUERY_PARAM = 'matchInvite';
+const TOURNAMENT_INVITE_QUERY_PARAM = 'tournamentInvite';
+
+const readMatchInviteTokenFromUrl = (): string | null => {
+    if (typeof window === 'undefined') {
+        return null;
+    }
+
+    const url = new URL(window.location.href);
+    return url.searchParams.get(MATCH_INVITE_QUERY_PARAM);
+};
+
+const clearMatchInviteTokenFromUrl = (): void => {
+    if (typeof window === 'undefined') {
+        return;
+    }
+
+    const url = new URL(window.location.href);
+    url.searchParams.delete(MATCH_INVITE_QUERY_PARAM);
+    const nextSearch = url.searchParams.toString();
+    const nextUrl = `${url.pathname}${nextSearch ? `?${nextSearch}` : ''}${url.hash}`;
+    window.history.replaceState({}, '', nextUrl);
+};
+
+const readTournamentInviteTokenFromUrl = (): string | null => {
+    if (typeof window === 'undefined') {
+        return null;
+    }
+
+    const url = new URL(window.location.href);
+    return url.searchParams.get(TOURNAMENT_INVITE_QUERY_PARAM);
+};
+
+const clearTournamentInviteTokenFromUrl = (): void => {
+    if (typeof window === 'undefined') {
+        return;
+    }
+
+    const url = new URL(window.location.href);
+    url.searchParams.delete(TOURNAMENT_INVITE_QUERY_PARAM);
+    const nextSearch = url.searchParams.toString();
+    const nextUrl = `${url.pathname}${nextSearch ? `?${nextSearch}` : ''}${url.hash}`;
+    window.history.replaceState({}, '', nextUrl);
+};
+
+type TournamentTimePreferenceOption = {
+    value: string;
+    label: string;
+};
+
+const TOURNAMENT_TIME_PREFERENCE_BANDS = [
+    { key: 'MORNING', label: 'Manana', hours: '10:00' },
+    { key: 'AFTERNOON', label: 'Tarde', hours: '15:00' },
+    { key: 'EVENING', label: 'Noche', hours: '20:00' },
+] as const;
+
+const buildTournamentTimePreferenceOptions = (
+    startDate?: string | null,
+    endDate?: string | null,
+): TournamentTimePreferenceOption[] => {
+    if (!startDate) {
+        return [];
+    }
+
+    const start = new Date(`${startDate}T00:00:00`);
+    const end = new Date(`${(endDate || startDate)}T00:00:00`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) {
+        return [];
+    }
+
+    const formatter = new Intl.DateTimeFormat('es-UY', {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+    });
+
+    const options: TournamentTimePreferenceOption[] = [];
+    for (let current = new Date(start); current <= end; current.setDate(current.getDate() + 1)) {
+        const isoDate = current.toISOString().slice(0, 10);
+        const dateLabel = formatter.format(current);
+        TOURNAMENT_TIME_PREFERENCE_BANDS.forEach(band => {
+            options.push({
+                value: `${isoDate}|${band.key}`,
+                label: `${dateLabel} - ${band.label} (${band.hours})`,
+            });
+        });
+    }
+    return options;
+};
+
 // --- VIEWS ---
 
 interface ViewProps {
@@ -474,6 +294,8 @@ interface ViewProps {
     onRequest?: (id: string) => void;
     onLeaveMatch?: (matchId: string) => void;
     onCancelMatch?: (matchId: string) => void;
+    onInviteMatch?: (match: Match) => void;
+    inviteLoadingMatchId?: string | null;
     onSubmitResult?: (matchId: string, result: [number, number][]) => void;
     onConfirmResult?: (matchId: string) => void;
     onRejectResult?: (matchId: string) => void;
@@ -490,6 +312,18 @@ interface ViewProps {
     onOpenNationalRanking?: () => void;
     onOpenMatchHistory?: () => void;
     onOpenPlayerClubVerification?: () => void;
+    onOpenEditProfile?: () => void;
+    notificationPreferences?: NotificationPreferencesResponse | null;
+    notificationPreferencesLoading?: boolean;
+    notificationPreferencesSaving?: boolean;
+    onUpdateNotificationPreferences?: (next: {
+        allowActivityTracking: boolean;
+        allowOperationalNotifications: boolean;
+    }) => Promise<void>;
+    accountDeletionRequest?: AccountDeletionResponse | null;
+    accountDeletionLoading?: boolean;
+    accountDeletionSaving?: boolean;
+    onRequestAccountDeletion?: (reason: string) => Promise<void>;
     onLaunchTournament?: (tournament: any) => void;
     onOpenTournamentStatus?: (tournament: any) => void;
     onAddTeamsToTournament?: (tournament: any) => void;
@@ -513,83 +347,6 @@ const EMPTY_SCOPED_MY_MATCHES: ScopedMyMatches = {
     pendingResult: [],
 };
 
-export const LegacyClubDashboardView: React.FC<ViewProps> = ({ onOpenClubUsers, onOpenClubAgenda }) => {
-    return (
-        <div className="pb-24 pt-4 px-4 animate-fade-in">
-            <header className="mb-6">
-                <h1 className="text-2xl font-bold text-white mb-1">Panel de Club</h1>
-                <p className="text-gray-400 text-sm">Gestión integral de tu sede</p>
-            </header>
-
-            {/* Quick Stats */}
-            <div className="grid grid-cols-2 gap-3 mb-6">
-                <div className="bg-dark-800 p-4 rounded-xl border border-dark-700">
-                    <p className="text-gray-400 text-xs uppercase font-bold">Canchas Activas</p>
-                    <h2 className="text-2xl font-bold text-white mt-1">6/8</h2>
-                    <span className="text-green-400 text-xs font-bold flex items-center gap-1 mt-1">
-                        <TrendingUp size={12} /> +12% vs ayer
-                    </span>
-                </div>
-                <div className="bg-dark-800 p-4 rounded-xl border border-dark-700">
-                    <p className="text-gray-400 text-xs uppercase font-bold">Ingresos Hoy</p>
-                    <h2 className="text-2xl font-bold text-white mt-1">$14.500</h2>
-                    <span className="text-gray-500 text-xs mt-1">32 Reservas</span>
-                </div>
-            </div>
-
-            {/* Management Modules Grid */}
-            <h3 className="text-white font-bold mb-3">Gestión</h3>
-            <div className="grid grid-cols-2 gap-3 mb-6">
-                <button 
-                    onClick={() => onOpenClubAgenda && onOpenClubAgenda()}
-                    className="bg-dark-800 p-4 rounded-xl border border-dark-700 flex flex-col items-center justify-center gap-2 hover:bg-dark-700 transition-colors">
-                    <Calendar size={24} className="text-padel-400" />
-                    <span className="text-gray-200 text-xs font-bold">Agenda</span>
-                </button>
-                <button 
-                    onClick={() => onOpenClubUsers && onOpenClubUsers()}
-                    className="bg-dark-800 p-4 rounded-xl border border-dark-700 flex flex-col items-center justify-center gap-2 hover:bg-dark-700 transition-colors">
-                    <Users size={24} className="text-blue-400" />
-                    <span className="text-gray-200 text-xs font-bold">Usuarios</span>
-                </button>
-                <button className="bg-dark-800 p-4 rounded-xl border border-dark-700 flex flex-col items-center justify-center gap-2 hover:bg-dark-700 transition-colors">
-                    <Trophy size={24} className="text-amber-400" />
-                    <span className="text-gray-200 text-xs font-bold">Torneos</span>
-                </button>
-                <button className="bg-dark-800 p-4 rounded-xl border border-dark-700 flex flex-col items-center justify-center gap-2 hover:bg-dark-700 transition-colors">
-                    <Settings size={24} className="text-gray-400" />
-                    <span className="text-gray-200 text-xs font-bold">Config</span>
-                </button>
-            </div>
-
-            {/* Live Activity */}
-            <h3 className="text-white font-bold mb-3">Actividad Reciente</h3>
-            <div className="space-y-3">
-                <div className="bg-dark-800 p-3 rounded-xl border border-dark-700 flex items-center gap-3">
-                    <div className="bg-green-500/10 p-2 rounded-full text-green-500">
-                        <CheckCircle size={16} />
-                    </div>
-                    <div>
-                        <p className="text-white text-xs font-bold">Reserva Confirmada</p>
-                        <p className="text-gray-400 text-[10px]">Cancha 3 • 18:30 • Martin G.</p>
-                    </div>
-                    <span className="ml-auto text-gray-500 text-[10px]">Hace 5m</span>
-                </div>
-                <div className="bg-dark-800 p-3 rounded-xl border border-dark-700 flex items-center gap-3">
-                    <div className="bg-amber-500/10 p-2 rounded-full text-amber-500">
-                        <Trophy size={16} />
-                    </div>
-                    <div>
-                        <p className="text-white text-xs font-bold">Resultado Validado</p>
-                        <p className="text-gray-400 text-[10px]">Torneo Cat 4ta • Semi Final</p>
-                    </div>
-                    <span className="ml-auto text-gray-500 text-[10px]">Hace 12m</span>
-                </div>
-            </div>
-        </div>
-    );
-};
-
 const TournamentStatusView: React.FC<{ 
     tournament: any, 
     currentUser: User, 
@@ -597,9 +354,28 @@ const TournamentStatusView: React.FC<{
     onClose: () => void,
     onAddResult?: (match: Match) => void,
     onUserClick?: (user: User) => void,
-    pendingResultMatchesById?: Map<string, Match>
-}> = ({ tournament, currentUser, matches, onClose, onAddResult, onUserClick, pendingResultMatchesById }) => {
+    pendingResultMatchesById?: Map<string, Match>,
+    onCreateInviteLink?: (tournament: any) => void,
+    tournamentInviteLoading?: boolean,
+    onUpdateMyTeamName?: (tournament: any, nextTeamName: string) => void,
+    onCompleteMyRegistration?: (tournament: any) => void,
+    savingTeamName?: boolean,
+}> = ({
+    tournament,
+    currentUser,
+    matches,
+    onClose,
+    onAddResult,
+    onUserClick,
+    pendingResultMatchesById,
+    onCreateInviteLink,
+    tournamentInviteLoading = false,
+    onUpdateMyTeamName,
+    onCompleteMyRegistration,
+    savingTeamName = false,
+}) => {
     const [activeTab, setActiveTab] = useState<'matches' | 'standings'>('matches');
+    const [editableTeamName, setEditableTeamName] = useState('');
     const isCreator = tournament.creatorId === currentUser.id;
     const isBackendTournament = Boolean(tournament?.isBackendTournament);
     const isBackendLeagueTournament = Boolean(tournament?.isBackendTournament && tournament?.format === 'league');
@@ -626,6 +402,30 @@ const TournamentStatusView: React.FC<{
 
     const isAmericano = tournament.format === 'americano';
     const isAmericanoDinamico = tournament.format === 'americano' && tournament.americanoType === 'dinamico';
+    const currentUserTeam = Array.isArray(tournament?.teams)
+        ? tournament.teams.find((team: any) =>
+            Array.isArray(team.players) && team.players.some((player: User | null) => player?.id === currentUser.id),
+        )
+        : null;
+    const canEditOwnTeamName = Boolean(
+        isBackendTournament
+        && currentUserTeam
+        && tournament?.currentUserEntryStatus === 'CONFIRMED'
+        && tournament?.backendStatus === 'OPEN',
+    );
+    const canCompleteOwnRegistration = Boolean(
+        isBackendTournament
+        && currentUserTeam
+        && tournament?.currentUserEntryStatus === 'PENDING'
+        && tournament?.backendStatus === 'OPEN',
+    );
+    const leagueTiebreakLabel = tournament?.standingsTiebreak === 'SETS_DIFFERENCE'
+        ? 'Desempate oficial: diferencia de sets.'
+        : 'Desempate oficial: diferencia de games.';
+
+    useEffect(() => {
+        setEditableTeamName(currentUserTeam?.teamName || '');
+    }, [currentUserTeam?.teamName, tournament?.id]);
 
     // Find matches for this tournament
     const tournamentMatches = matches.filter(m => m.tournamentId === tournament.id);
@@ -788,7 +588,10 @@ const TournamentStatusView: React.FC<{
                         teamA.netSets = teamA.setsWon - teamA.setsLost;
                         if (setsA > setsB) {
                             teamA.pg++;
-                            teamA.pts += 2;
+                            teamA.pts += 3;
+                            if (teamB && setsB > 0) {
+                                teamB.pts += 1;
+                            }
                         } else {
                             teamA.pp++;
                         }
@@ -815,7 +618,10 @@ const TournamentStatusView: React.FC<{
                         teamB.netSets = teamB.setsWon - teamB.setsLost;
                         if (setsB > setsA) {
                             teamB.pg++;
-                            teamB.pts += 2;
+                            teamB.pts += 3;
+                            if (teamA && setsA > 0) {
+                                teamA.pts += 1;
+                            }
                         } else {
                             teamB.pp++;
                         }
@@ -835,8 +641,14 @@ const TournamentStatusView: React.FC<{
                 if (b.netGames !== a.netGames) return b.netGames - a.netGames;
                 return b.gamesWon - a.gamesWon;
             }
-            if (b.netSets !== a.netSets) return b.netSets - a.netSets;
-            return b.setsWon - a.setsWon;
+            if (tournament?.standingsTiebreak === 'SETS_DIFFERENCE') {
+                if (b.netSets !== a.netSets) return b.netSets - a.netSets;
+                if (b.netGames !== a.netGames) return b.netGames - a.netGames;
+                return b.gamesWon - a.gamesWon;
+            }
+            if (b.netGames !== a.netGames) return b.netGames - a.netGames;
+            if (b.gamesWon !== a.gamesWon) return b.gamesWon - a.gamesWon;
+            return b.netSets - a.netSets;
         });
     };
 
@@ -901,6 +713,115 @@ const TournamentStatusView: React.FC<{
                                 </p>
                             </div>
                         </div>
+                    </div>
+                )}
+
+                {isBackendTournament && (
+                    <div className="rounded-2xl border border-dark-700 bg-dark-800/70 p-4 space-y-4">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <span className="rounded-full border border-dark-700 bg-dark-900 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-gray-200">
+                                {tournament.format === 'league' ? 'Liga' : tournament.format === 'tournament' ? 'Eliminatoria' : 'Americano'}
+                            </span>
+                            <span className="rounded-full border border-dark-700 bg-dark-900 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-gray-300">
+                                {tournament.isCompetitive ? 'Por los puntos' : 'Recreativo'}
+                            </span>
+                            <span className="rounded-full border border-dark-700 bg-dark-900 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-gray-300">
+                                {tournament.openEnrollment ? 'Inscripcion abierta' : 'Inscripcion cerrada'}
+                            </span>
+                        </div>
+
+                        {Array.isArray(tournament.categoryLabels) && tournament.categoryLabels.length > 0 && (
+                            <div className="flex flex-wrap gap-2">
+                                {tournament.categoryLabels.map((categoryLabel: string) => (
+                                    <span
+                                        key={categoryLabel}
+                                        className="rounded-full border border-dark-700 bg-dark-900 px-3 py-1 text-[11px] text-gray-200"
+                                    >
+                                        {categoryLabel}
+                                    </span>
+                                ))}
+                            </div>
+                        )}
+
+                        <div className="rounded-2xl border border-dark-700 bg-dark-900/60 p-3 text-xs text-gray-400">
+                            {tournament.affectsPlayerRating ? (
+                                <p>
+                                    Este torneo actualiza el rating oficial cuando los resultados de cada cruce quedan confirmados.
+                                </p>
+                            ) : (
+                                <p>
+                                    Este formato no modifica el rating oficial. Solo actualiza la tabla y el avance interno del torneo.
+                                </p>
+                            )}
+                        </div>
+
+                        {isBackendLeagueTournament && (
+                            <div className="rounded-2xl border border-dark-700 bg-dark-900/60 p-3 text-xs text-gray-400">
+                                <p className="text-white font-bold mb-1">Liga MVP</p>
+                                <p>Fixture oficial: todos contra todos durante dos rondas. Tabla 3-1-0.</p>
+                                <p className="mt-1">{leagueTiebreakLabel}</p>
+                            </div>
+                        )}
+
+                        {isCreator && tournament.backendStatus === 'OPEN' && tournament.openEnrollment && (
+                            <div className="space-y-2">
+                                <Button
+                                    type="button"
+                                    variant="secondary"
+                                    onClick={() => onCreateInviteLink?.(tournament)}
+                                    disabled={tournamentInviteLoading}
+                                    className="w-full font-bold"
+                                >
+                                    {tournamentInviteLoading ? 'Generando link...' : 'Generar link de inscripcion'}
+                                </Button>
+                                <p className="text-[11px] text-gray-500">
+                                    El link oficial inscribe jugadores en el torneo y queda validado por backend.
+                                </p>
+                            </div>
+                        )}
+
+                        {canEditOwnTeamName && (
+                            <div className="space-y-2 rounded-2xl border border-dark-700 bg-dark-900/60 p-3">
+                                <p className="text-white text-sm font-bold">Nombre del equipo</p>
+                                <p className="text-[11px] text-gray-400">
+                                    Cuando la dupla ya esta confirmada podes guardar el nombre oficial del equipo.
+                                </p>
+                                <div className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        value={editableTeamName}
+                                        onChange={(event) => setEditableTeamName(event.target.value)}
+                                        placeholder="Nombre del equipo"
+                                        className="flex-1 rounded-xl border border-dark-700 bg-dark-800 px-3 py-2 text-sm text-white focus:border-padel-500 focus:outline-none"
+                                    />
+                                    <Button
+                                        type="button"
+                                        onClick={() => onUpdateMyTeamName?.(tournament, editableTeamName)}
+                                        disabled={savingTeamName || !editableTeamName.trim() || editableTeamName.trim() === (currentUserTeam?.teamName || '')}
+                                        className="font-bold"
+                                    >
+                                        {savingTeamName ? 'Guardando...' : 'Guardar'}
+                                    </Button>
+                                </div>
+                            </div>
+                        )}
+
+                        {canCompleteOwnRegistration && (
+                            <div className="space-y-2 rounded-2xl border border-amber-500/20 bg-amber-500/10 p-3">
+                                <p className="text-white text-sm font-bold">Completar inscripcion</p>
+                                <p className="text-[11px] text-gray-300">
+                                    Tu equipo sigue pendiente. Sumale companero y horarios antes del launch.
+                                </p>
+                                <Button
+                                    type="button"
+                                    variant="secondary"
+                                    onClick={() => onCompleteMyRegistration?.(tournament)}
+                                    className="w-full font-bold"
+                                >
+                                    Completar equipo
+                                </Button>
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -1226,6 +1147,9 @@ const TournamentStatusView: React.FC<{
                                             />
                                         ))}
                                     </div>
+                                    <p className="text-gray-500 text-[10px]">
+                                        Backend oficial: solo soporta 1, 2, 4 u 8 grupos con al menos dos equipos por grupo.
+                                    </p>
                                 </div>
                             );
                         })()}
@@ -1236,18 +1160,24 @@ const TournamentStatusView: React.FC<{
     );
 };
 
-const LaunchTournamentView: React.FC<{ tournament: any, matches: Match[], onClose: () => void, onLaunch: (config: any) => void }> = ({ tournament, matches, onClose, onLaunch }) => {
+const LaunchTournamentView: React.FC<{ tournament: any, onClose: () => void, onLaunch: (config: any) => void }> = ({ tournament, onClose, onLaunch }) => {
     const [format, setFormat] = useState<'eliminatoria' | 'liga' | 'americano'>(
-        tournament?.format === 'americano' ? 'americano' : 
-        tournament?.format === 'league' ? 'liga' : 'eliminatoria'
+        tournament?.format === 'americano'
+            ? 'americano'
+            : tournament?.format === 'league'
+                ? 'liga'
+                : 'eliminatoria',
     );
     const [americanoType, setAmericanoType] = useState<'fijo' | 'dinamico'>(tournament?.americanoType || 'fijo');
-    const [numGroups, setNumGroups] = useState<number>(1);
-    const [qualifiers, setQualifiers] = useState<string>('top2');
-    const [leagueFormat, setLeagueFormat] = useState<string>('dos_rondas');
-    const [autoGenerate, setAutoGenerate] = useState<boolean>(true);
-    const [availableCourts, setAvailableCourts] = useState<number>(tournament?.availableCourts || 1);
-    const [generatedData, setGeneratedData] = useState<any | null>(null);
+    const [numGroups, setNumGroups] = useState<number>(Math.max(1, tournament?.numberOfGroups || 1));
+    const [availableCourts, setAvailableCourts] = useState<number>(Math.max(1, tournament?.availableCourts || 1));
+    const [generatedData, setGeneratedData] = useState<{
+        groups: { name: string, teams: { name: string, players: string[] }[] }[],
+        groupMatches: { round: string, date: string, courtName?: string, team1: string, team2: string }[],
+        playoffs: { round: string, date: string, courtName?: string, team1: string, team2: string }[],
+    } | null>(null);
+    const [previewLoading, setPreviewLoading] = useState(false);
+    const [previewError, setPreviewError] = useState<string | null>(null);
     const lockToBackendTournamentFormat = Boolean(
         tournament?.isBackendTournament
         && (
@@ -1261,463 +1191,103 @@ const LaunchTournamentView: React.FC<{ tournament: any, matches: Match[], onClos
         : tournament?.format === 'tournament'
             ? 'eliminatoria'
             : tournament?.americanoType === 'dinamico'
-                ? 'americano dinámico'
+                ? 'americano dinamico'
                 : 'americano fijo';
+    const confirmedTeamsCount = Array.isArray(tournament?.teams)
+        ? tournament.teams.filter((team: any) => Array.isArray(team.players) && team.players.length > 0).length
+        : 0;
+    const supportedEliminationGroupOptions = [1, 2, 4, 8].filter(option =>
+        option <= Math.max(1, Math.floor(confirmedTeamsCount / 2)),
+    );
+    const effectiveEliminationGroupOptions = supportedEliminationGroupOptions.length > 0
+        ? supportedEliminationGroupOptions
+        : [1];
+    const eliminationPreviewRule = numGroups === 1
+        ? 'Backend oficial: top 4 del grupo a semifinales.'
+        : numGroups === 2
+            ? 'Backend oficial: top 2 de cada grupo a semifinales.'
+            : numGroups === 4
+                ? 'Backend oficial: avanzan los ganadores de grupo y se siembran por standings.'
+                : 'Backend oficial: avanzan los ganadores de grupo y se siembran para cuartos, semis y final.';
 
-    const handleGenerate = () => {
-        let teamsToUse: any[] = [];
-        if (tournament && tournament.teams && tournament.teams.length > 0) {
-            teamsToUse = tournament.teams.map((t: any, index: number) => ({
-                id: t.id || `t${index + 1}`,
-                name: t.teamName || `Equipo ${index + 1}`,
-                players: t.players.map((p: any) => p.name),
-                preferences: t.preferences || []
-            }));
-        } else if (tournament && tournament.registeredUsers > 0) {
-            // If teams are not explicitly defined but registeredUsers > 0, 
-            // create dummy teams based on registered users count
-            const numTeams = Math.floor(tournament.registeredUsers / 2);
-            for (let i = 0; i < numTeams; i++) {
-                teamsToUse.push({
-                    id: `t${i + 1}`,
-                    name: `Equipo ${i + 1}`,
-                    players: [`Jugador ${i * 2 + 1}`, `Jugador ${i * 2 + 2}`],
-                    preferences: []
-                });
-            }
-        } else {
-            // Only use mock teams if it's a demo/test or explicitly requested
-            teamsToUse = [
-                { id: 't1', name: 'Los Galácticos', players: ['Juan P.', 'Carlos M.'], preferences: ['Noche Lun 20'] },
-                { id: 't2', name: 'Padel Bros', players: ['Diego R.', 'Martín S.'], preferences: ['Noche Lun 20'] },
-                { id: 't3', name: 'Smashers', players: ['Fede G.', 'Nico L.'], preferences: ['Tarde Mar 21'] },
-                { id: 't4', name: 'Volea Mágica', players: ['Alejandro T.', 'Sebastián V.'], preferences: ['Tarde Mar 21'] }
-            ];
-        }
-
-        if (teamsToUse.length < 2) {
-            alert("Se necesitan al menos 2 equipos para generar el torneo.");
+    useEffect(() => {
+        if (format !== 'eliminatoria') {
             return;
         }
 
-        let groups: any[] = [];
-        const actualNumGroups = format === 'liga' ? 1 : Math.min(numGroups, teamsToUse.length);
-        for (let i = 0; i < actualNumGroups; i++) {
-            groups.push({ name: format === 'liga' ? 'Liga' : `Grupo ${String.fromCharCode(65 + i)}`, teams: [] });
+        if (!effectiveEliminationGroupOptions.includes(numGroups)) {
+            setNumGroups(effectiveEliminationGroupOptions[0]);
         }
-        
-        // Distribute teams evenly
-        teamsToUse.forEach((team, index) => {
-            groups[index % actualNumGroups].teams.push(team);
-        });
+    }, [effectiveEliminationGroupOptions, format, numGroups]);
 
-        // Date calculation helpers
-        const getTournamentDate = (dayOffset: number) => {
-            if (!tournament?.startDate) return null;
-            const [y, m, d] = tournament.startDate.split('-');
-            const date = new Date(Number(y), Number(m) - 1, Number(d));
-            date.setDate(date.getDate() + dayOffset);
-            return date;
-        };
+    useEffect(() => {
+        setGeneratedData(null);
+        setPreviewError(null);
+    }, [format, americanoType, numGroups, availableCourts, tournament?.id]);
 
-        const formatDateStr = (date: Date, time: string) => {
-            const days = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
-            return `${days[date.getDay()]} ${date.getDate()} ${time}`;
-        };
+    const formatPreviewDate = (scheduledAt: string) => {
+        const date = new Date(scheduledAt);
+        const weekday = new Intl.DateTimeFormat('es-UY', { weekday: 'short' }).format(date).replace('.', '');
+        const time = new Intl.DateTimeFormat('es-UY', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+        }).format(date);
+        return `${weekday.charAt(0).toUpperCase() + weekday.slice(1)} ${date.getDate()} ${time}`;
+    };
 
-        const getTournamentDuration = () => {
-            if (!tournament?.startDate || !tournament?.endDate) return 1;
-            const [sy, sm, sd] = tournament.startDate.split('-');
-            const [ey, em, ed] = tournament.endDate.split('-');
-            const start = new Date(Number(sy), Number(sm) - 1, Number(sd));
-            const end = new Date(Number(ey), Number(em) - 1, Number(ed));
-            const diff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-            return diff + 1;
-        };
+    const mapLaunchPreviewToGeneratedData = (preview: Awaited<ReturnType<typeof backendApi.previewTournamentLaunch>>) => ({
+        groups: preview.groups.map(group => ({
+            name: group.name,
+            teams: group.teams.map(team => ({
+                name: team.teamName,
+                players: team.memberNames,
+            })),
+        })),
+        groupMatches: preview.stageMatches.map(match => ({
+            round: match.roundLabel,
+            date: formatPreviewDate(match.scheduledAt),
+            courtName: match.courtName,
+            team1: match.teamOneLabel,
+            team2: match.teamTwoLabel,
+        })),
+        playoffs: preview.playoffMatches.map(match => ({
+            round: match.roundLabel,
+            date: formatPreviewDate(match.scheduledAt),
+            courtName: match.courtName,
+            team1: match.teamOneLabel,
+            team2: match.teamTwoLabel,
+        })),
+    });
 
-        const duration = getTournamentDuration();
-        const groupStageDays = format === 'liga' ? duration : Math.max(1, Math.ceil(duration * 0.6)); // 60% of time for groups
-        const playoffDays = duration - groupStageDays;
-
-        const getDayString = (date: Date) => {
-            const days = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
-            return `${days[date.getDay()]} ${date.getDate()}`;
-        };
-
-        const teamSchedules: Record<string, Date[]> = {};
-        const courtSchedules: Record<number, Date[]> = {};
-        const availableCourtsCount = availableCourts;
-        for (let i = 1; i <= availableCourtsCount; i++) {
-            courtSchedules[i] = [];
-        }
-
-        // Pre-fill courtSchedules with existing matches from the same club
-        matches.forEach(m => {
-            if (m.clubId === tournament.clubId && m.status !== 'completed') {
-                const matchDate = new Date(m.date);
-                if (m.time) {
-                    const [h, min] = m.time.split(':').map(Number);
-                    if (!isNaN(h) && !isNaN(min)) {
-                        matchDate.setHours(h, min, 0, 0);
-                    }
-                }
-                // Try to parse court number from courtName (e.g., "Cancha 1")
-                const courtMatch = m.courtName.match(/Cancha (\d+)/i);
-                if (courtMatch) {
-                    const courtNum = parseInt(courtMatch[1]);
-                    if (courtNum >= 1 && courtNum <= availableCourtsCount) {
-                        courtSchedules[courtNum].push(matchDate);
-                    }
-                }
-            }
-        });
-
-        const addSchedule = (teamId: string, time: Date, courtNum: number) => {
-            if (!teamSchedules[teamId]) teamSchedules[teamId] = [];
-            teamSchedules[teamId].push(time);
-            courtSchedules[courtNum].push(time);
-        };
-
-        const getAvailableCourt = (proposedTime: Date) => {
-            if (format === 'liga') {
-                return 1; // Always return a dummy court number for liga
-            }
-            for (let i = 1; i <= availableCourtsCount; i++) {
-                const schedule = courtSchedules[i] || [];
-                let isAvailable = true;
-                for (const scheduledTime of schedule) {
-                    if (Math.abs(proposedTime.getTime() - scheduledTime.getTime()) < 90 * 60 * 1000) {
-                        isAvailable = false;
-                        break;
-                    }
-                }
-                if (isAvailable) return i;
-            }
-            return null;
-        };
-
-        const isValidTime = (teamA: any, teamB: any, proposedTime: Date) => {
-            const checkTeam = (teamId: string) => {
-                const schedule = teamSchedules[teamId] || [];
-                for (const scheduledTime of schedule) {
-                    if (Math.abs(proposedTime.getTime() - scheduledTime.getTime()) < 60 * 60 * 1000) {
-                        return false;
-                    }
-                }
-                
-                // Check for 3 consecutive matches (no 1-hour rest between 3 matches)
-                const allTimes = [...schedule, proposedTime].sort((a, b) => a.getTime() - b.getTime());
-                for (let i = 0; i < allTimes.length - 2; i++) {
-                    const t1 = allTimes[i].getTime();
-                    const t2 = allTimes[i+1].getTime();
-                    const t3 = allTimes[i+2].getTime();
-                    
-                    const gap1 = (t2 - t1) / (60 * 60 * 1000);
-                    const gap2 = (t3 - t2) / (60 * 60 * 1000);
-                    
-                    if (gap1 < 2 && gap2 < 2) {
-                        return false;
-                    }
-                }
-                
-                return true;
-            };
-            return checkTeam(teamA.id) && checkTeam(teamB.id) && getAvailableCourt(proposedTime) !== null;
-        };
-
-        const getHoursForPeriod = (period: string) => {
-            if (period === 'Mañana') return [9, 10, 11];
-            if (period === 'Tarde') return [12, 13, 14, 15, 16, 17, 18];
-            if (period === 'Noche') return [19, 20, 21];
-            return [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21];
-        };
-
-        const formatReturn = (time: Date, courtNum: number, warning?: string) => {
-            const timeStr = `${time.getHours().toString().padStart(2, '0')}:00`;
-            return { 
-                date: formatDateStr(time, timeStr), 
-                isoDate: time.toISOString(),
-                time: timeStr,
-                courtNum,
-                warning 
-            };
-        };
-
-        const findMatchTime = (teamA: any, teamB: any, matchIndex: number, totalMatches: number) => {
-            let warning: string | undefined = undefined;
-
-            const trySchedule = (dayIndex: number, hours: number[]) => {
-                const baseDate = getTournamentDate(dayIndex);
-                if (!baseDate) return null;
-                
-                for (const hour of hours) {
-                    const proposedTime = new Date(baseDate);
-                    proposedTime.setHours(hour, 0, 0, 0);
-                    const courtNum = getAvailableCourt(proposedTime);
-                    if (courtNum !== null && isValidTime(teamA, teamB, proposedTime)) {
-                        addSchedule(teamA.id, proposedTime, courtNum);
-                        addSchedule(teamB.id, proposedTime, courtNum);
-                        return { time: proposedTime, courtNum };
-                    }
-                }
-                return null;
-            };
-
-            if (autoGenerate) {
-                const prefsA = teamA.preferences || [];
-                const prefsB = teamB.preferences || [];
-
-                const hasPrefsA = prefsA.length > 0;
-                const hasPrefsB = prefsB.length > 0;
-
-                if (!hasPrefsA && !hasPrefsB) {
-                    // Both have no restrictions
-                    for (let i = 0; i < groupStageDays; i++) {
-                        const dayIndex = (Math.floor((matchIndex / totalMatches) * groupStageDays) + i) % groupStageDays;
-                        const result = trySchedule(dayIndex, getHoursForPeriod('All'));
-                        if (result) return formatReturn(result.time, result.courtNum, undefined);
-                    }
-                } else if (hasPrefsA && !hasPrefsB) {
-                    // Only A has restrictions
-                    for (let i = 0; i < groupStageDays; i++) {
-                        const date = getTournamentDate(i);
-                        if (!date) continue;
-                        const dayStr = getDayString(date);
-                        const prefA = prefsA.find((p: string) => p.includes(dayStr));
-                        if (prefA) {
-                            const period = prefA.split(' ')[0];
-                            const result = trySchedule(i, getHoursForPeriod(period));
-                            if (result) return formatReturn(result.time, result.courtNum, undefined);
-                        }
-                    }
-                    warning = '⚠️ Chequear disponibilidad del equipo';
-                } else if (!hasPrefsA && hasPrefsB) {
-                    // Only B has restrictions
-                    for (let i = 0; i < groupStageDays; i++) {
-                        const date = getTournamentDate(i);
-                        if (!date) continue;
-                        const dayStr = getDayString(date);
-                        const prefB = prefsB.find((p: string) => p.includes(dayStr));
-                        if (prefB) {
-                            const period = prefB.split(' ')[0];
-                            const result = trySchedule(i, getHoursForPeriod(period));
-                            if (result) return formatReturn(result.time, result.courtNum, undefined);
-                        }
-                    }
-                    warning = '⚠️ Chequear disponibilidad del equipo';
-                } else {
-                    // Both have restrictions
-                    for (let i = 0; i < groupStageDays; i++) {
-                        const date = getTournamentDate(i);
-                        if (!date) continue;
-                        const dayStr = getDayString(date);
-                        
-                        const common = prefsA.find((p: string) => prefsB.includes(p) && p.includes(dayStr));
-                        if (common) {
-                            const period = common.split(' ')[0];
-                            const result = trySchedule(i, getHoursForPeriod(period));
-                            if (result) return formatReturn(result.time, result.courtNum, undefined);
-                        }
-                    }
-                    
-                    for (let i = 0; i < groupStageDays; i++) {
-                        const date = getTournamentDate(i);
-                        if (!date) continue;
-                        const dayStr = getDayString(date);
-                        
-                        const prefA = prefsA.find((p: string) => p.includes(dayStr));
-                        const prefB = prefsB.find((p: string) => p.includes(dayStr));
-                        
-                        if (prefA || prefB) {
-                            const pref = prefA || prefB;
-                            const period = pref.split(' ')[0];
-                            const result = trySchedule(i, getHoursForPeriod(period));
-                            if (result) {
-                                warning = '⚠️ Chequear disponibilidad del equipo';
-                                return formatReturn(result.time, result.courtNum, warning);
-                            }
-                        }
-                    }
-                    
-                    warning = '⚠️ Chequear disponibilidad del equipo';
-                }
-            }
-            
-            // Fallback if no time found or autoGenerate is false
-            const defaultTimes = ['09:00', '11:00', '14:00', '16:00', '18:00', '20:00', '21:30'];
-            for (let i = 0; i < groupStageDays; i++) {
-                const dayIndex = (Math.floor((matchIndex / totalMatches) * groupStageDays) + i) % groupStageDays;
-                const result = trySchedule(dayIndex, getHoursForPeriod('All'));
-                if (result) return formatReturn(result.time, result.courtNum, warning);
-            }
-
-            // Absolute fallback (should rarely happen unless too many matches in too few days)
-            const dayIndex = Math.floor((matchIndex / totalMatches) * groupStageDays);
-            const date = getTournamentDate(dayIndex) || new Date();
-            const timeIndex = matchIndex % defaultTimes.length;
-            const timeStr = defaultTimes[timeIndex];
-            const [h, m] = timeStr.split(':');
-            date.setHours(Number(h), Number(m), 0, 0);
-            const courtNum = getAvailableCourt(date) || 1;
-            return { 
-                date: formatDateStr(date, timeStr), 
-                isoDate: date.toISOString(),
-                time: timeStr,
-                courtNum,
-                warning 
-            };
-        };
-
-        const groupMatches: any[] = [];
-        let matchCounter = 0;
-        
-        // Calculate total group matches first for distribution
-        let totalGroupMatches = 0;
-        groups.forEach(g => {
-            const n = g.teams.length;
-            if (format === 'liga') {
-                totalGroupMatches += n * (n - 1); // Double round-robin
-            } else {
-                totalGroupMatches += (n * (n - 1)) / 2;
-            }
-        });
-
-        groups.forEach(group => {
-            if (format === 'liga') {
-                // Double round-robin
-                const n = group.teams.length;
-                const isOdd = n % 2 !== 0;
-                const teamsList = isOdd ? [...group.teams, null] : [...group.teams];
-                const numTeams = teamsList.length;
-                const rounds = numTeams - 1;
-                
-                // Round 1
-                for (let r = 0; r < rounds; r++) {
-                    for (let i = 0; i < numTeams / 2; i++) {
-                        const teamA = teamsList[i];
-                        const teamB = teamsList[numTeams - 1 - i];
-                        if (teamA !== null && teamB !== null) {
-                            const timeResult = findMatchTime(teamA, teamB, matchCounter++, totalGroupMatches);
-                            groupMatches.push({
-                                id: `m_${group.name}_r1_${r}_${i}`,
-                                round: `Ronda 1 - Fecha ${r + 1}`,
-                                team1: teamA.name,
-                                team2: teamB.name,
-                                date: timeResult.date,
-                                isoDate: timeResult.isoDate,
-                                time: timeResult.time,
-                                courtNum: format === 'liga' ? undefined : timeResult.courtNum,
-                                warning: timeResult.warning
-                            });
-                        }
-                    }
-                    teamsList.splice(1, 0, teamsList.pop());
-                }
-                
-                // Round 2 (reverse roles)
-                for (let r = 0; r < rounds; r++) {
-                    for (let i = 0; i < numTeams / 2; i++) {
-                        const teamB = teamsList[i];
-                        const teamA = teamsList[numTeams - 1 - i];
-                        if (teamA !== null && teamB !== null) {
-                            const timeResult = findMatchTime(teamA, teamB, matchCounter++, totalGroupMatches);
-                            groupMatches.push({
-                                id: `m_${group.name}_r2_${r}_${i}`,
-                                round: `Ronda 2 - Fecha ${r + 1}`,
-                                team1: teamA.name,
-                                team2: teamB.name,
-                                date: timeResult.date,
-                                isoDate: timeResult.isoDate,
-                                time: timeResult.time,
-                                courtNum: format === 'liga' ? undefined : timeResult.courtNum,
-                                warning: timeResult.warning
-                            });
-                        }
-                    }
-                    teamsList.splice(1, 0, teamsList.pop());
-                }
-            } else {
-                for (let i = 0; i < group.teams.length; i++) {
-                    for (let j = i + 1; j < group.teams.length; j++) {
-                        const teamA = group.teams[i];
-                        const teamB = group.teams[j];
-                        const timeResult = findMatchTime(teamA, teamB, matchCounter++, totalGroupMatches);
-                        groupMatches.push({
-                            id: `m_${group.name}_${i}_${j}`,
-                            round: `Fase de Grupos - ${group.name}`,
-                            team1: teamA.name,
-                            team2: teamB.name,
-                            date: timeResult.date,
-                            isoDate: timeResult.isoDate,
-                            time: timeResult.time,
-                            courtNum: timeResult.courtNum,
-                            warning: timeResult.warning
-                        });
-                    }
-                }
-            }
-        });
-
-        const playoffs = [];
-        const playoffStartDate = getTournamentDate(groupStageDays) || getTournamentDate(duration - 1) || new Date();
-        const finalDate = getTournamentDate(duration - 1) || new Date();
-
-        const createPlayoff = (id: string, round: string, team1: string, team2: string, dateObj: Date, defaultTimeStr: string) => {
-            const d = new Date(dateObj);
-            let [h, m] = defaultTimeStr.split(':').map(Number);
-            d.setHours(h, m, 0, 0);
-            
-            let courtNum = getAvailableCourt(d);
-            let timeStr = defaultTimeStr;
-            
-            // If the default time is busy, try finding the next available slot on the same day
-            if (courtNum === null) {
-                const possibleHours = [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21];
-                for (const hour of possibleHours) {
-                    d.setHours(hour, 0, 0, 0);
-                    courtNum = getAvailableCourt(d);
-                    if (courtNum !== null) {
-                        timeStr = `${hour.toString().padStart(2, '0')}:00`;
-                        break;
-                    }
-                }
-            }
-            
-            // Fallback to court 1 if absolutely no slots are available
-            if (courtNum === null) {
-                courtNum = 1;
-                d.setHours(h, m, 0, 0);
-                timeStr = defaultTimeStr;
-            } else {
-                // Register the scheduled time so subsequent playoffs don't overlap
-                addSchedule(team1, d, courtNum);
-                addSchedule(team2, d, courtNum);
-            }
-
-            return {
-                id, round, team1, team2,
-                date: formatDateStr(d, timeStr),
-                isoDate: d.toISOString(),
-                time: timeStr,
-                courtNum
-            };
-        };
-
-        if (format !== 'liga') {
-            if (actualNumGroups === 1) {
-                playoffs.push(createPlayoff('p1', 'Semifinal 1', '1ro Grupo A', '4to Grupo A', playoffStartDate, '10:00'));
-                playoffs.push(createPlayoff('p2', 'Semifinal 2', '2do Grupo A', '3ro Grupo A', playoffStartDate, '12:00'));
-                playoffs.push(createPlayoff('p3', 'Final', 'Ganador Semi 1', 'Ganador Semi 2', finalDate, '18:00'));
-            } else if (actualNumGroups === 2) {
-                playoffs.push(createPlayoff('p1', 'Semifinal 1', '1ro Grupo A', '2do Grupo B', playoffStartDate, '10:00'));
-                playoffs.push(createPlayoff('p2', 'Semifinal 2', '1ro Grupo B', '2do Grupo A', playoffStartDate, '12:00'));
-                playoffs.push(createPlayoff('p3', 'Final', 'Ganador Semi 1', 'Ganador Semi 2', finalDate, '18:00'));
-            } else {
-                 playoffs.push(createPlayoff('p1', 'Final', '1ro Grupo A', '1ro Grupo B', finalDate, '18:00'));
-            }
+    const handleGenerate = async () => {
+        if (!tournament?.isBackendTournament || typeof tournament?.backendTournamentId !== 'number') {
+            setPreviewError('Este launch MVP solo esta disponible para torneos conectados al backend.');
+            return;
         }
 
-        setGeneratedData({ groups, groupMatches, playoffs });
+        try {
+            setPreviewLoading(true);
+            setPreviewError(null);
+
+            const preview = await backendApi.previewTournamentLaunch(tournament.backendTournamentId, {
+                availableCourts,
+                numberOfGroups: format === 'eliminatoria' ? numGroups : 1,
+                leagueRounds: format === 'liga' ? 2 : undefined,
+                courtNames: Array.isArray(tournament?.courtNames)
+                    ? tournament.courtNames.filter((courtName: string) => courtName?.trim())
+                    : undefined,
+            });
+
+            setGeneratedData(mapLaunchPreviewToGeneratedData(preview));
+        } catch (error) {
+            const message = error instanceof BackendApiError && error.message
+                ? error.message
+                : 'No pudimos generar la preview oficial del torneo.';
+            setPreviewError(message);
+        } finally {
+            setPreviewLoading(false);
+        }
     };
 
     const handleLaunch = () => {
@@ -1726,18 +1296,84 @@ const LaunchTournamentView: React.FC<{ tournament: any, matches: Match[], onClos
             americanoType: format === 'americano' ? americanoType : undefined,
             availableCourts,
             courtNames: tournament.courtNames,
-            leagueRounds: leagueFormat === 'dos_rondas' ? 2 : 1,
-            numGroups,
-            qualifiers,
-            autoGenerate,
+            leagueRounds: format === 'liga' ? 2 : undefined,
+            numGroups: format === 'eliminatoria' ? numGroups : 1,
             generatedData,
-            matchesPerParticipant: tournament.matchesPerParticipant
+            matchesPerParticipant: tournament.matchesPerParticipant,
         });
     };
 
+    const previewSections = [
+        {
+            title: 'Grupos Generados',
+            icon: <Users size={16} className="text-padel-500" />,
+            empty: generatedData?.groups?.length ? null : 'El backend no devolvio grupos para esta configuracion.',
+            items: generatedData?.groups ?? [],
+            render: (group: { name: string, teams: { name: string, players: string[] }[] }, idx: number) => (
+                <div key={`${group.name}-${idx}`} className="bg-dark-800 border border-dark-700 rounded-xl overflow-hidden">
+                    <div className="bg-dark-700/50 px-4 py-2 border-b border-dark-700">
+                        <h5 className="text-white font-bold text-sm">{group.name}</h5>
+                    </div>
+                    <div className="divide-y divide-dark-700">
+                        {group.teams.map((team, teamIdx) => (
+                            <div key={`${team.name}-${teamIdx}`} className="p-3 px-4 flex justify-between items-center">
+                                <div>
+                                    <p className="text-white font-medium text-sm">{team.name}</p>
+                                    <p className="text-gray-400 text-[10px]">{team.players.join(' & ')}</p>
+                                </div>
+                                <div className="text-xs text-gray-500 font-mono">
+                                    Equipo {teamIdx + 1}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            ),
+        },
+        {
+            title: format === 'liga' ? 'Partidos de la Liga' : 'Partidos de Fase de Grupos',
+            icon: <Calendar size={16} className="text-padel-500" />,
+            empty: 'El backend no devolvio partidos de fase para esta configuracion.',
+            items: generatedData?.groupMatches ?? [],
+            render: (match: { round: string, date: string, courtName?: string, team1: string, team2: string }, idx: number) => (
+                <div key={`${match.round}-${idx}`} className="bg-dark-800 border border-dark-700 rounded-xl p-3 flex flex-col gap-2">
+                    <div className="flex justify-between items-center">
+                        <span className="text-padel-500 text-[10px] font-bold uppercase">{match.round}</span>
+                        <span className="text-gray-400 text-[10px] flex items-center gap-1"><Calendar size={10} /> {match.date}</span>
+                    </div>
+                    {match.courtName && <p className="text-gray-500 text-[10px]">{match.courtName}</p>}
+                    <div className="flex items-center justify-between bg-dark-900/50 rounded-lg p-2 border border-dark-700/50">
+                        <span className="text-white text-xs font-medium truncate flex-1 text-center">{match.team1}</span>
+                        <span className="text-gray-500 text-[10px] font-bold px-2">VS</span>
+                        <span className="text-white text-xs font-medium truncate flex-1 text-center">{match.team2}</span>
+                    </div>
+                </div>
+            ),
+        },
+        {
+            title: 'Proximos Partidos (Playoffs)',
+            icon: <Trophy size={16} className="text-amber-500" />,
+            empty: null,
+            items: generatedData?.playoffs ?? [],
+            render: (match: { round: string, date: string, courtName?: string, team1: string, team2: string }, idx: number) => (
+                <div key={`${match.round}-${idx}`} className="bg-dark-800 border border-dark-700 rounded-xl p-3 flex flex-col gap-2">
+                    <div className="flex justify-between items-center">
+                        <span className="text-amber-500 text-[10px] font-bold uppercase">{match.round}</span>
+                        <span className="text-gray-400 text-[10px] flex items-center gap-1"><Calendar size={10} /> {match.date}</span>
+                    </div>
+                    {match.courtName && <p className="text-gray-500 text-[10px]">{match.courtName}</p>}
+                    <div className="flex items-center justify-between bg-dark-900/50 rounded-lg p-2 border border-dark-700/50">
+                        <span className="text-white text-xs font-medium truncate flex-1 text-center">{match.team1}</span>
+                        <span className="text-gray-500 text-[10px] font-bold px-2">VS</span>
+                        <span className="text-white text-xs font-medium truncate flex-1 text-center">{match.team2}</span>
+                    </div>
+                </div>
+            ),
+        },
+    ];
+
     return (
         <div className="fixed inset-0 bg-dark-900 z-[100] flex flex-col overflow-hidden">
-            {/* Header */}
             <div className="flex items-center justify-between p-4 border-b border-dark-700 bg-dark-900/80 backdrop-blur-md sticky top-0 z-10">
                 <button onClick={onClose} className="p-2 -ml-2 text-gray-400 hover:text-white transition-colors">
                     <ChevronLeft size={24} />
@@ -1757,84 +1393,87 @@ const LaunchTournamentView: React.FC<{ tournament: any, matches: Match[], onClos
                             <div className="mt-2 p-2 bg-amber-500/10 border border-amber-500/30 rounded-lg flex items-start gap-2">
                                 <AlertTriangle size={14} className="text-amber-500 shrink-0 mt-0.5" />
                                 <p className="text-amber-500 text-[10px] leading-tight">
-                                    El torneo no está completo. Puedes lanzarlo ahora con los jugadores actuales, pero el fixture se generará solo con los inscritos.
+                                    El torneo no esta completo. Puedes lanzarlo ahora con los jugadores actuales, pero el fixture se generara solo con los inscriptos.
                                 </p>
                             </div>
                         )}
                     </div>
                 </div>
 
+                {previewError && (
+                    <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3">
+                        <p className="text-red-200 text-xs font-bold">{previewError}</p>
+                    </div>
+                )}
+
                 {!generatedData ? (
                     <>
-                        {/* Forma de competir */}
                         <div className="space-y-3">
                             <label className="text-gray-400 text-xs font-bold uppercase tracking-wider block">Forma de Competir</label>
                             <div className="grid grid-cols-3 gap-2">
                                 {[
                                     { id: 'eliminatoria', label: 'Eliminatoria', icon: <Trophy size={16} /> },
                                     { id: 'liga', label: 'Liga', icon: <Swords size={16} /> },
-                                    { id: 'americano', label: 'Americano', icon: <Users size={16} /> }
-                                ].map(f => (
+                                    { id: 'americano', label: 'Americano', icon: <Users size={16} /> },
+                                ].map(option => (
                                     <button
-                                        key={f.id}
+                                        key={option.id}
                                         onClick={() => {
                                             if (lockToBackendTournamentFormat) return;
-                                            setFormat(f.id as any);
+                                            setFormat(option.id as 'eliminatoria' | 'liga' | 'americano');
                                         }}
                                         className={`flex flex-col items-center justify-center p-3 rounded-xl border transition-all ${
-                                            format === f.id 
-                                            ? 'bg-amber-500/20 border-amber-500 text-amber-500' 
-                                            : 'bg-dark-800 border-dark-700 text-gray-400 hover:border-gray-500'
+                                            format === option.id
+                                                ? 'bg-amber-500/20 border-amber-500 text-amber-500'
+                                                : 'bg-dark-800 border-dark-700 text-gray-400 hover:border-gray-500'
                                         }`}
                                         disabled={lockToBackendTournamentFormat}
                                     >
-                                        {f.icon}
-                                        <span className="text-[10px] font-bold mt-1 uppercase">{f.label}</span>
+                                        {option.icon}
+                                        <span className="text-[10px] font-bold mt-1 uppercase">{option.label}</span>
                                     </button>
                                 ))}
                             </div>
                             {lockToBackendTournamentFormat && (
                                 <p className="text-gray-500 text-[10px]">
-                                    Este torneo ya fue creado como {lockedBackendFormatLabel}. El backend usará ese formato oficial al lanzarlo.
+                                    Este torneo ya fue creado como {lockedBackendFormatLabel}. El backend usara ese formato oficial al lanzarlo.
                                 </p>
                             )}
                         </div>
 
                         {format === 'eliminatoria' && (
                             <>
-                                {/* Cantidad de Grupos */}
                                 <div className="space-y-3">
                                     <label className="text-gray-400 text-xs font-bold uppercase tracking-wider block">Cantidad de Grupos</label>
                                     <div className="relative">
-                                        <select 
+                                        <select
                                             value={numGroups}
-                                            onChange={(e) => setNumGroups(parseInt(e.target.value))}
+                                            onChange={(e) => setNumGroups(parseInt(e.target.value, 10))}
                                             className="w-full h-12 bg-dark-800 border border-dark-700 rounded-xl px-4 text-white font-medium appearance-none focus:outline-none focus:border-amber-500"
                                         >
-                                            {[1, 2, 3, 4, 5, 6, 7, 8].map(num => (
-                                                <option key={num} value={num}>{num} {num === 1 ? 'Grupo' : 'Grupos'}</option>
+                                            {effectiveEliminationGroupOptions.map(option => (
+                                                <option key={option} value={option}>{option} {option === 1 ? 'Grupo' : 'Grupos'}</option>
                                             ))}
                                         </select>
                                         <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                                     </div>
                                 </div>
 
-                                {/* Equipos clasificados por serie */}
                                 <div className="space-y-3">
-                                    <label className="text-gray-400 text-xs font-bold uppercase tracking-wider block">Clasificación a Playoffs</label>
+                                    <label className="text-gray-400 text-xs font-bold uppercase tracking-wider block">Clasificacion a Playoffs</label>
                                     <div className="relative">
-                                        <select 
-                                            value={qualifiers}
-                                            onChange={(e) => setQualifiers(e.target.value)}
+                                        <select
+                                            value="backend-rule"
+                                            disabled
                                             className="w-full h-12 bg-dark-800 border border-dark-700 rounded-xl px-4 text-white font-medium appearance-none focus:outline-none focus:border-amber-500"
                                         >
-                                            <option value="top2">Primeros dos equipos de cada grupo</option>
-                                            <option value="top1_best2nd">Primero de cada grupo y mejor segundo</option>
-                                            <option value="top1">Solo el primero de cada grupo</option>
-                                            <option value="all">Todos los equipos (Playoffs directos)</option>
+                                            <option value="backend-rule">{eliminationPreviewRule}</option>
                                         </select>
                                         <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                                     </div>
+                                    <p className="text-gray-500 text-[10px]">
+                                        La clasificacion de playoffs queda fijada por backend segun grupos confirmados y standings oficiales.
+                                    </p>
                                 </div>
                             </>
                         )}
@@ -1843,16 +1482,18 @@ const LaunchTournamentView: React.FC<{ tournament: any, matches: Match[], onClos
                             <div className="space-y-3">
                                 <label className="text-gray-400 text-xs font-bold uppercase tracking-wider block">Formato de Liga</label>
                                 <div className="relative">
-                                    <select 
-                                        value={leagueFormat}
-                                        onChange={(e) => setLeagueFormat(e.target.value)}
+                                    <select
+                                        value="dos_rondas"
+                                        disabled
                                         className="w-full h-12 bg-dark-800 border border-dark-700 rounded-xl px-4 text-white font-medium appearance-none focus:outline-none focus:border-amber-500"
                                     >
                                         <option value="dos_rondas">Liga: Dos Rondas</option>
                                     </select>
                                     <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                                 </div>
-                                <p className="text-gray-500 text-[10px]">Todos juegan contra todos una primera ronda y luego comienzan de nuevo. La segunda ronda solo comienza cuando todos los partidos de la primera ronda han sido agendados.</p>
+                                <p className="text-gray-500 text-[10px]">
+                                    Todos juegan contra todos en dos rondas. La agenda final la define el backend segun disponibilidad oficial.
+                                </p>
                             </div>
                         )}
 
@@ -1860,172 +1501,98 @@ const LaunchTournamentView: React.FC<{ tournament: any, matches: Match[], onClos
                             <div className="space-y-3">
                                 <label className="text-gray-400 text-xs font-bold uppercase tracking-wider block">Tipo de Americano</label>
                                 <div className="flex bg-dark-800 p-1 rounded-xl border border-dark-700">
-                                    <button 
+                                    <button
                                         onClick={() => setAmericanoType('fijo')}
+                                        disabled={lockToBackendTournamentFormat}
                                         className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all ${americanoType === 'fijo' ? 'bg-amber-500 text-dark-900 shadow-lg' : 'text-gray-400'}`}
                                     >
                                         Americano Fijo
                                     </button>
-                                    <button 
+                                    <button
                                         onClick={() => setAmericanoType('dinamico')}
+                                        disabled={lockToBackendTournamentFormat}
                                         className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all ${americanoType === 'dinamico' ? 'bg-amber-500 text-dark-900 shadow-lg' : 'text-gray-400'}`}
                                     >
-                                        Americano Dinámico
+                                        Americano Dinamico
                                     </button>
                                 </div>
                                 <p className="text-gray-500 text-[10px]">
-                                    {americanoType === 'fijo' 
-                                        ? 'Las parejas se mantienen iguales durante todo el torneo.' 
+                                    {americanoType === 'fijo'
+                                        ? 'Las parejas se mantienen iguales durante todo el torneo.'
                                         : 'Los jugadores rotan de pareja en cada partido.'}
                                 </p>
                             </div>
                         )}
 
-                        {/* Canchas Disponibles */}
                         {format !== 'liga' && (
                             <div className="space-y-3">
                                 <label className="text-gray-400 text-xs font-bold uppercase tracking-wider block">Canchas Disponibles</label>
                                 <div className="relative">
-                                    <input 
-                                        type="number" 
+                                    <input
+                                        type="number"
                                         min="1"
                                         value={availableCourts}
-                                        onChange={(e) => setAvailableCourts(Math.max(1, parseInt(e.target.value) || 1))}
+                                        onChange={(e) => setAvailableCourts(Math.max(1, parseInt(e.target.value, 10) || 1))}
                                         className="w-full h-12 bg-dark-800 border border-dark-700 rounded-xl px-4 text-white font-medium focus:outline-none focus:border-amber-500"
                                     />
                                 </div>
-                                <p className="text-gray-500 text-[10px]">Permite coordinar partidos en simultáneo para agilizar el torneo.</p>
+                                <p className="text-gray-500 text-[10px]">Permite coordinar partidos en simultaneo para agilizar el torneo.</p>
                             </div>
                         )}
 
-                        {/* Generación Automática */}
                         <div className="space-y-3">
-                            <label className="text-gray-400 text-xs font-bold uppercase tracking-wider block">Coordinación de Partidos</label>
-                            <button 
-                                onClick={() => setAutoGenerate(!autoGenerate)}
-                                className={`w-full flex items-start gap-3 p-4 rounded-xl border transition-all text-left ${
-                                    autoGenerate ? 'bg-amber-500/10 border-amber-500/50' : 'bg-dark-800 border-dark-700'
-                                }`}
-                            >
-                                <div className={`w-5 h-5 rounded border flex items-center justify-center shrink-0 mt-0.5 ${autoGenerate ? 'bg-amber-500 border-amber-500' : 'border-gray-500'}`}>
-                                    {autoGenerate && <Check size={14} className="text-dark-900" />}
+                            <label className="text-gray-400 text-xs font-bold uppercase tracking-wider block">Coordinacion de Partidos</label>
+                            <div className="w-full flex items-start gap-3 p-4 rounded-xl border bg-amber-500/10 border-amber-500/50 text-left">
+                                <div className="w-5 h-5 rounded border flex items-center justify-center shrink-0 mt-0.5 bg-amber-500 border-amber-500">
+                                    <Check size={14} className="text-dark-900" />
                                 </div>
                                 <div>
-                                    <p className={`font-bold text-sm mb-1 ${autoGenerate ? 'text-amber-500' : 'text-white'}`}>Coordinar horarios automáticamente</p>
+                                    <p className="font-bold text-sm mb-1 text-amber-500">Coordinar horarios automaticamente</p>
                                     <p className="text-gray-400 text-xs leading-relaxed">
-                                        Considerar las restricciones horarias de los distintos equipos para coordinar los partidos dependiendo de la disponibilidad de los usuarios.
+                                        El backend agenda la fase inicial y los playoffs con la configuracion oficial del torneo y las canchas disponibles.
                                     </p>
                                 </div>
-                            </button>
+                            </div>
                         </div>
                     </>
                 ) : (
                     <div className="space-y-6 animate-fade-in">
-                        {/* Grupos Generados */}
-                        <div className="space-y-4">
-                            <h4 className="text-white font-bold text-sm uppercase tracking-wider flex items-center gap-2">
-                                <Users size={16} className="text-padel-500" />
-                                Grupos Generados
-                            </h4>
-                            <div className="grid gap-4">
-                                {generatedData.groups.map((group: any, idx: number) => (
-                                    <div key={idx} className="bg-dark-800 border border-dark-700 rounded-xl overflow-hidden">
-                                        <div className="bg-dark-700/50 px-4 py-2 border-b border-dark-700">
-                                            <h5 className="text-white font-bold text-sm">{group.name}</h5>
-                                        </div>
-                                        <div className="divide-y divide-dark-700">
-                                            {group.teams.map((team: any, tIdx: number) => (
-                                                <div key={tIdx} className="p-3 px-4 flex justify-between items-center">
-                                                    <div>
-                                                        <p className="text-white font-medium text-sm">{team.name}</p>
-                                                        <p className="text-gray-400 text-[10px]">{team.players.join(' & ')}</p>
-                                                    </div>
-                                                    <div className="text-xs text-gray-500 font-mono">
-                                                        Equipo {tIdx + 1}
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
+                        {previewSections.map(section => {
+                            if (!section.items.length && !section.empty) {
+                                return null;
+                            }
 
-                        {/* Playoffs Generados */}
-                        {generatedData.playoffs && generatedData.playoffs.length > 0 && (
-                            <div className="space-y-4">
-                                <h4 className="text-white font-bold text-sm uppercase tracking-wider flex items-center gap-2">
-                                    <Trophy size={16} className="text-amber-500" />
-                                    Próximos Partidos (Playoffs)
-                                </h4>
-                                <div className="space-y-3">
-                                    {generatedData.playoffs.map((match: any, idx: number) => (
-                                        <div key={idx} className="bg-dark-800 border border-dark-700 rounded-xl p-3 flex flex-col gap-2">
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-amber-500 text-[10px] font-bold uppercase">{match.round}</span>
-                                                <span className="text-gray-400 text-[10px] flex items-center gap-1"><Calendar size={10}/> {match.date}</span>
-                                            </div>
-                                            {match.warning && (
-                                                <div className="flex items-center gap-1 text-amber-500 text-[10px] font-bold">
-                                                    <AlertCircle size={10} />
-                                                    {match.warning}
-                                                </div>
-                                            )}
-                                            <div className="flex items-center justify-between bg-dark-900/50 rounded-lg p-2 border border-dark-700/50">
-                                                <span className="text-white text-xs font-medium truncate flex-1 text-center">{match.team1}</span>
-                                                <span className="text-gray-500 text-[10px] font-bold px-2">VS</span>
-                                                <span className="text-white text-xs font-medium truncate flex-1 text-center">{match.team2}</span>
-                                            </div>
+                            return (
+                                <div key={section.title} className="space-y-4">
+                                    <h4 className="text-white font-bold text-sm uppercase tracking-wider flex items-center gap-2">
+                                        {section.icon}
+                                        {section.title}
+                                    </h4>
+                                    {!section.items.length ? (
+                                        <div className="bg-dark-800 border border-dark-700 rounded-xl p-4">
+                                            <p className="text-gray-400 text-xs">{section.empty}</p>
                                         </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Partidos de Fase de Grupos */}
-                        {generatedData.groupMatches && generatedData.groupMatches.length > 0 && (
-                            <div className="space-y-4">
-                                <h4 className="text-white font-bold text-sm uppercase tracking-wider flex items-center gap-2">
-                                    <Calendar size={16} className="text-padel-500" />
-                                    {format === 'liga' ? 'Partidos de la Liga' : 'Partidos de Fase de Grupos'}
-                                </h4>
-                                <div className="space-y-3">
-                                    {generatedData.groupMatches.map((match: any, idx: number) => (
-                                        <div key={idx} className="bg-dark-800 border border-dark-700 rounded-xl p-3 flex flex-col gap-2">
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-padel-500 text-[10px] font-bold uppercase">{match.round}</span>
-                                                <span className="text-gray-400 text-[10px] flex items-center gap-1"><Calendar size={10}/> {match.date}</span>
-                                            </div>
-                                            {match.warning && (
-                                                <div className="flex items-center gap-1 text-amber-500 text-[10px] font-bold">
-                                                    <AlertCircle size={10} />
-                                                    {match.warning}
-                                                </div>
-                                            )}
-                                            <div className="flex items-center justify-between bg-dark-900/50 rounded-lg p-2 border border-dark-700/50">
-                                                <span className="text-white text-xs font-medium truncate flex-1 text-center">{match.team1}</span>
-                                                <span className="text-gray-500 text-[10px] font-bold px-2">VS</span>
-                                                <span className="text-white text-xs font-medium truncate flex-1 text-center">{match.team2}</span>
-                                            </div>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            {section.items.map(section.render)}
                                         </div>
-                                    ))}
+                                    )}
                                 </div>
-                            </div>
-                        )}
+                            );
+                        })}
                     </div>
                 )}
             </div>
 
-            {/* Footer */}
             <div className="p-4 bg-dark-800 border-t border-dark-700 pb-safe">
                 {!generatedData ? (
-                    <Button fullWidth size="md" onClick={handleGenerate}>
-                        Generar Grupos y Playoffs
+                    <Button fullWidth size="md" onClick={handleGenerate} disabled={previewLoading}>
+                        {previewLoading ? 'Generando preview oficial...' : 'Generar Grupos y Playoffs'}
                     </Button>
                 ) : (
                     <div className="flex gap-3">
                         <Button variant="secondary" size="md" onClick={() => setGeneratedData(null)} className="flex-1">
-                            Atrás
+                            Atras
                         </Button>
                         <Button size="md" onClick={handleLaunch} className="flex-1">
                             Confirmar y Lanzar
@@ -2048,32 +1615,25 @@ const AddTeamsToTournamentView: React.FC<{ currentUser: User, tournament: any, a
         }
         return acc;
     }, {}) : {};
+    const initialTeamPreferences = tournament.teams ? tournament.teams.reduce((acc: any, t: any) => {
+        if (t.players.length === 2) {
+            acc[`${t.players[0].id}-${t.players[1].id}`] = t.preferences || [];
+        }
+        return acc;
+    }, {}) : {};
     
     const [selectedPlayers, setSelectedPlayers] = useState<User[]>(initialPlayers);
     const [searchQuery, setSearchQuery] = useState<string>('');
     const [teamNames, setTeamNames] = useState<Record<string, string>>(initialTeamNames);
-    const [teamPreferences, setTeamPreferences] = useState<Record<string, string[]>>({});
+    const [teamPreferences, setTeamPreferences] = useState<Record<string, string[]>>(initialTeamPreferences);
     const [openDropdown, setOpenDropdown] = useState<string | null>(null);
 
     const remainingSlots = maxPlayers - selectedPlayers.length;
 
-    const timeOptions = useMemo(() => {
-        if (!tournament.startDate || !tournament.endDate) return [];
-        const [sYear, sMonth, sDay] = tournament.startDate.split('-').map(Number);
-        const [eYear, eMonth, eDay] = tournament.endDate.split('-').map(Number);
-        
-        const start = new Date(sYear, sMonth - 1, sDay);
-        const end = new Date(eYear, eMonth - 1, eDay);
-        
-        const options = [];
-        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-            const dayStr = d.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' });
-            options.push({ value: `${dayStr} Mañana`, label: `${dayStr} - Mañana (08:00 - 13:00)` });
-            options.push({ value: `${dayStr} Tarde`, label: `${dayStr} - Tarde (13:00 - 18:00)` });
-            options.push({ value: `${dayStr} Noche`, label: `${dayStr} - Noche (18:00 - 23:00)` });
-        }
-        return options;
-    }, [tournament.startDate, tournament.endDate]);
+    const timeOptions = useMemo(
+        () => buildTournamentTimePreferenceOptions(tournament.startDate, tournament.endDate),
+        [tournament.startDate, tournament.endDate],
+    );
 
     const selectablePlayers = useMemo(
         () => Array.from(new Map(availablePlayers.map(user => [user.id, user])).values()),
@@ -2117,11 +1677,15 @@ const AddTeamsToTournamentView: React.FC<{ currentUser: User, tournament: any, a
     }
 
     const handleSave = () => {
-        const updatedTeams = pairs.filter(p => p.length === 2).map(p => ({
-            players: p,
-            teamName: teamNames[`${p[0].id}-${p[1].id}`] || `${p[0].name.split(' ')[0]} & ${p[1].name.split(' ')[0]}`,
-            preferences: teamPreferences[`${p[0].id}-${p[1].id}`] || []
-        }));
+        const updatedTeams = pairs
+            .filter(p => p.length > 0)
+            .map(p => ({
+                players: p,
+                teamName: p.length === 2
+                    ? teamNames[`${p[0].id}-${p[1].id}`] || `${p[0].name.split(' ')[0]} & ${p[1].name.split(' ')[0]}`
+                    : p[0].name,
+                preferences: p.length === 2 ? (teamPreferences[`${p[0].id}-${p[1].id}`] || []) : []
+            }));
 
         onUpdate({
             ...tournament,
@@ -2299,7 +1863,7 @@ const AddTeamsToTournamentView: React.FC<{ currentUser: User, tournament: any, a
                     size="md" 
                     onClick={handleSave} 
                     className="font-bold shadow-xl shadow-amber-500/20 bg-amber-500 hover:bg-amber-600 text-dark-900"
-                    disabled={pairs.length === 0 || pairs.some(p => p.length !== 2)}
+                    disabled={pairs.length === 0}
                 >
                     Guardar Equipos
                 </Button>
@@ -2308,7 +1872,7 @@ const AddTeamsToTournamentView: React.FC<{ currentUser: User, tournament: any, a
     );
 };
 
-const CreateTournamentView: React.FC<{ currentUser: User, selectablePlayers?: User[], clubOptions?: Club[], onClose: () => void, onCreate: (data: any) => void }> = ({ currentUser, selectablePlayers = [currentUser], clubOptions = [], onClose, onCreate }) => {
+const CreateTournamentView: React.FC<{ currentUser: User, selectablePlayers?: User[], clubOptions?: Club[], defaultClubId?: string | null, onClose: () => void, onCreate: (data: any) => void }> = ({ currentUser, selectablePlayers = [currentUser], clubOptions = [], defaultClubId = null, onClose, onCreate }) => {
     const [name, setName] = useState<string>('');
     const [rules, setRules] = useState<string>('');
     const [cost, setCost] = useState<string>('');
@@ -2321,9 +1885,11 @@ const CreateTournamentView: React.FC<{ currentUser: User, selectablePlayers?: Us
     const [americanoType, setAmericanoType] = useState<'fijo' | 'dinamico'>('fijo');
     const [matchesPerParticipant, setMatchesPerParticipant] = useState<number>(5);
     const [isCompetitive, setIsCompetitive] = useState<boolean>(true);
-    const [selectedClub, setSelectedClub] = useState<string | null>(null);
+    const [openEnrollment, setOpenEnrollment] = useState<boolean>(true);
+    const [standingsTiebreak, setStandingsTiebreak] = useState<TournamentStandingsTiebreak>('GAMES_DIFFERENCE');
+    const [selectedClub, setSelectedClub] = useState<string | null>(defaultClubId);
     const [prizes, setPrizes] = useState<string>('');
-    const [selectedPlayers, setSelectedPlayers] = useState<User[]>([currentUser]); // Flat list of players
+    const [selectedPlayers, setSelectedPlayers] = useState<User[]>(currentUser.accountType === 'club' ? [] : [currentUser]); // Flat list of players
 
     const isPerfectAmericano = useMemo(() => {
         if (format !== 'americano') return true;
@@ -2331,7 +1897,6 @@ const CreateTournamentView: React.FC<{ currentUser: User, selectablePlayers?: Us
         return totalSlots % 4 === 0;
     }, [format, numTeams, matchesPerParticipant]);
     const [searchQuery, setSearchQuery] = useState<string>('');
-    const [linkCopied, setLinkCopied] = useState(false);
     const [teamNames, setTeamNames] = useState<Record<string, string>>({});
     const [startDate, setStartDate] = useState<string>('');
     const [endDate, setEndDate] = useState<string>('');
@@ -2339,31 +1904,10 @@ const CreateTournamentView: React.FC<{ currentUser: User, selectablePlayers?: Us
     const [openDropdown, setOpenDropdown] = useState<string | null>(null);
     const [isRulesOpen, setIsRulesOpen] = useState<boolean>(false);
 
-    const timeOptions = useMemo(() => {
-        if (!startDate || !endDate) return [];
-        const [sYear, sMonth, sDay] = startDate.split('-').map(Number);
-        const [eYear, eMonth, eDay] = endDate.split('-').map(Number);
-        
-        let current = new Date(sYear, sMonth - 1, sDay);
-        const last = new Date(eYear, eMonth - 1, eDay);
-        
-        if (current > last) return [];
-
-        const options = [];
-        const days = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
-        
-        let count = 0;
-        while (current <= last && count < 30) {
-            const dayName = days[current.getDay()];
-            const dateStr = `${dayName} ${current.getDate()}`;
-            options.push(`Mañana ${dateStr}`);
-            options.push(`Tarde ${dateStr}`);
-            options.push(`Noche ${dateStr}`);
-            current.setDate(current.getDate() + 1);
-            count++;
-        }
-        return options;
-    }, [startDate, endDate]);
+    const timeOptions = useMemo(
+        () => buildTournamentTimePreferenceOptions(startDate, endDate),
+        [startDate, endDate],
+    );
 
     const TEAMS_OPTIONS = [4, 8, 12, 16];
 
@@ -2390,8 +1934,19 @@ const CreateTournamentView: React.FC<{ currentUser: User, selectablePlayers?: Us
         }
     };
 
-    // Combine mocks for searching
+    // Deduplicate selectable players before applying search filters.
     const uniqueUsers = Array.from(new Map(selectablePlayers.map(user => [user.id, user])).values());
+
+    useEffect(() => {
+        if (selectedClub || !defaultClubId) {
+            return;
+        }
+
+        const matchedClub = clubOptions.find(club => club.id === defaultClubId);
+        if (matchedClub) {
+            setSelectedClub(matchedClub.id);
+        }
+    }, [clubOptions, defaultClubId, selectedClub]);
 
     const filteredUsers = uniqueUsers.filter(u => 
         u.name.toLowerCase().includes(searchQuery.toLowerCase()) && 
@@ -2412,12 +1967,6 @@ const CreateTournamentView: React.FC<{ currentUser: User, selectablePlayers?: Us
     for (let i = 0; i < selectedPlayers.length; i += 2) {
         pairs.push(selectedPlayers.slice(i, i + 2));
     }
-
-    const handleCopyLink = () => {
-        navigator.clipboard.writeText(`https://sentimospadel.uy/t/invite/${Date.now()}`);
-        setLinkCopied(true);
-        setTimeout(() => setLinkCopied(false), 2000);
-    };
 
     return (
         <div className="fixed inset-0 bg-dark-900 z-[100] flex flex-col animate-fade-in">
@@ -2551,6 +2100,34 @@ const CreateTournamentView: React.FC<{ currentUser: User, selectablePlayers?: Us
                         <Info size={14} className="text-gray-400 shrink-0 mt-0.5" />
                         <p className="text-[10px] text-gray-400 leading-relaxed">
                             Elige <span className="text-white font-bold">Competitivo</span> para identificar un torneo orientado al resultado o <span className="text-white font-bold">recreativo</span> para uno casual. Los torneos actuales no modifican el rating oficial de los jugadores.
+                        </p>
+                    </div>
+                </div>
+
+                <div>
+                    <label className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-2 block flex items-center gap-2">
+                        <Link size={14} /> Inscripcion
+                    </label>
+                    <div className="flex bg-dark-800 p-1 rounded-xl border border-dark-700 mb-3">
+                        <button
+                            onClick={() => setOpenEnrollment(true)}
+                            className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${openEnrollment ? 'bg-padel-500 text-dark-900 shadow' : 'text-gray-400'}`}
+                        >
+                            <Link size={14} /> Abierta por link
+                        </button>
+                        <button
+                            onClick={() => setOpenEnrollment(false)}
+                            className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${!openEnrollment ? 'bg-blue-500 text-white shadow' : 'text-gray-400'}`}
+                        >
+                            <Users size={14} /> Cerrada / directa
+                        </button>
+                    </div>
+                    <div className="flex gap-2 p-2 bg-dark-800/50 rounded-lg border border-dark-700">
+                        <Info size={14} className="text-gray-400 shrink-0 mt-0.5" />
+                        <p className="text-[10px] text-gray-400 leading-relaxed">
+                            {openEnrollment
+                                ? 'Despues de crear el torneo podras compartir un link oficial para que los jugadores se inscriban desde la app.'
+                                : 'Los cupos quedan cerrados y el creador define los equipos manualmente antes del launch.'}
                         </p>
                     </div>
                 </div>
@@ -2907,29 +2484,32 @@ const CreateTournamentView: React.FC<{ currentUser: User, selectablePlayers?: Us
                                                         >
                                                             <span className="truncate">
                                                                 {teamPreferences[teamKey]?.length > 0 
-                                                                    ? teamPreferences[teamKey].join(', ') 
+                                                                    ? timeOptions
+                                                                        .filter(option => teamPreferences[teamKey]?.includes(option.value))
+                                                                        .map(option => option.label)
+                                                                        .join(', ') 
                                                                     : 'Sin restricciones horarias'}
                                                             </span>
                                                             <ChevronDown size={10} className={`shrink-0 transition-transform ${openDropdown === teamKey ? 'rotate-180' : ''}`} />
                                                         </button>
                                                         {openDropdown === teamKey && (
                                                             <div className="absolute z-10 mt-1 w-full bg-dark-800 border border-dark-700 rounded shadow-lg max-h-32 overflow-y-auto">
-                                                                {timeOptions.map(opt => (
-                                                                    <label key={opt} className="flex items-center gap-2 px-2 py-1.5 hover:bg-dark-700 cursor-pointer text-[10px] text-white">
+                                                                {timeOptions.map(option => (
+                                                                    <label key={option.value} className="flex items-center gap-2 px-2 py-1.5 hover:bg-dark-700 cursor-pointer text-[10px] text-white">
                                                                         <input 
                                                                             type="checkbox" 
-                                                                            checked={teamPreferences[teamKey]?.includes(opt) || false}
+                                                                            checked={teamPreferences[teamKey]?.includes(option.value) || false}
                                                                             onChange={(e) => {
                                                                                 const currentPrefs = teamPreferences[teamKey] || [];
                                                                                 if (e.target.checked) {
-                                                                                    setTeamPreferences({...teamPreferences, [teamKey]: [...currentPrefs, opt]});
+                                                                                    setTeamPreferences({...teamPreferences, [teamKey]: [...currentPrefs, option.value]});
                                                                                 } else {
-                                                                                    setTeamPreferences({...teamPreferences, [teamKey]: currentPrefs.filter(p => p !== opt)});
+                                                                                    setTeamPreferences({...teamPreferences, [teamKey]: currentPrefs.filter(p => p !== option.value)});
                                                                                 }
                                                                             }}
                                                                             className="accent-padel-500"
                                                                         />
-                                                                        {opt}
+                                                                        {option.label}
                                                                     </label>
                                                                 ))}
                                                             </div>
@@ -2946,30 +2526,40 @@ const CreateTournamentView: React.FC<{ currentUser: User, selectablePlayers?: Us
                     )}
                 </div>
 
-                {/* Share Link Option */}
-                <button 
-                    onClick={handleCopyLink}
-                    className="w-full bg-dark-800 border border-padel-500/30 p-3 rounded-xl flex items-center justify-between group active:scale-95 transition-all"
-                >
-                    <div className="flex items-center gap-3">
-                        <div className="bg-padel-500/10 p-2 rounded-lg group-hover:bg-padel-500/20 transition-colors">
-                            <Link size={18} className="text-padel-400" />
+                {format === 'league' && (
+                    <div className="space-y-3 rounded-2xl border border-dark-700 bg-dark-800/50 p-3">
+                        <div className="flex items-center justify-between gap-3">
+                            <div>
+                                <p className="text-white text-sm font-bold">Liga MVP</p>
+                                <p className="text-[10px] text-gray-400">Todos contra todos durante dos rondas. Tabla oficial 3-1-0.</p>
+                            </div>
+                            <span className="rounded-full border border-dark-700 bg-dark-900 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-padel-400">
+                                Doble ronda
+                            </span>
                         </div>
-                        <div className="text-left">
-                            <p className="text-white text-sm font-bold">Invitar vía Link</p>
-                            <p className="text-gray-400 text-[10px]">Comparte por WhatsApp o Mensaje</p>
+                        <div>
+                            <label className="text-gray-400 text-[10px] font-bold uppercase tracking-wider mb-2 block">
+                                Desempate de tabla
+                            </label>
+                            <div className="grid grid-cols-2 gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setStandingsTiebreak('GAMES_DIFFERENCE')}
+                                    className={`rounded-xl border px-3 py-2 text-xs font-bold transition-all ${standingsTiebreak === 'GAMES_DIFFERENCE' ? 'border-padel-500 bg-padel-500/15 text-padel-300' : 'border-dark-700 bg-dark-900 text-gray-400'}`}
+                                >
+                                    Diferencia de games
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setStandingsTiebreak('SETS_DIFFERENCE')}
+                                    className={`rounded-xl border px-3 py-2 text-xs font-bold transition-all ${standingsTiebreak === 'SETS_DIFFERENCE' ? 'border-padel-500 bg-padel-500/15 text-padel-300' : 'border-dark-700 bg-dark-900 text-gray-400'}`}
+                                >
+                                    Diferencia de sets
+                                </button>
+                            </div>
                         </div>
                     </div>
-                    {linkCopied ? (
-                        <span className="text-xs text-green-400 font-bold flex items-center gap-1 bg-green-900/20 px-2 py-1 rounded">
-                            <Check size={12} /> Copiado
-                        </span>
-                    ) : (
-                        <div className="bg-dark-700 p-1.5 rounded-md">
-                            <Copy size={14} className="text-gray-400" />
-                        </div>
-                    )}
-                </button>
+                )}
 
                 {/* 6. Prizes (Optional) */}
                 <div>
@@ -3011,6 +2601,11 @@ const CreateTournamentView: React.FC<{ currentUser: User, selectablePlayers?: Us
                         availableCourts,
                         courtNames: courtNames.slice(0, availableCourts),
                         isCompetitive,
+                        openEnrollment,
+                        standingsTiebreak,
+                        categoryLabels: selectedCategories
+                            .map(id => CATEGORIES.find(category => category.id === id)?.name)
+                            .filter((categoryLabel): categoryLabel is string => Boolean(categoryLabel)),
                         clubId: selectedClub,
                         clubName: clubOptions.find(c => c.id === selectedClub)?.name,
                         teams: format === 'americano' && americanoType === 'dinamico'
@@ -3019,281 +2614,18 @@ const CreateTournamentView: React.FC<{ currentUser: User, selectablePlayers?: Us
                                 teamName: player.name,
                                 preferences: []
                             }))
-                            : pairs.filter(p => p.length === 2).map(p => ({
+                            : pairs.filter(p => p.length > 0).map(p => ({
                                 players: p,
-                                teamName: teamNames[`${p[0].id}-${p[1].id}`] || `${p[0].name.split(' ')[0]} & ${p[1].name.split(' ')[0]}`,
-                                preferences: teamPreferences[`${p[0].id}-${p[1].id}`] || []
+                                teamName: p.length === 2
+                                    ? teamNames[`${p[0].id}-${p[1].id}`] || `${p[0].name.split(' ')[0]} & ${p[1].name.split(' ')[0]}`
+                                    : p[0].name,
+                                preferences: p.length === 2 ? (teamPreferences[`${p[0].id}-${p[1].id}`] || []) : []
                             }))
                     })} 
                     className="font-bold shadow-xl shadow-amber-500/20 bg-amber-500 hover:bg-amber-600 text-dark-900"
                 >
                     Crear Torneo
                 </Button>
-            </div>
-        </div>
-    );
-};
-
-const NationalRankingView: React.FC<{ currentUser: User, clubOptions?: Club[], onClose: () => void }> = ({ currentUser, clubOptions = [], onClose }) => {
-    const [selectedCity, setSelectedCity] = useState<string>('Todas');
-    const [selectedClub, setSelectedClub] = useState<string>('Todos');
-    const [selectedGender, setSelectedGender] = useState<string>('Todos');
-    const [selectedCategory, setSelectedCategory] = useState<string>('Todas');
-    const [selectedAge, setSelectedAge] = useState<string>('Todas');
-
-    const CITIES = ['Todas', 'Montevideo', 'Canelones', 'Maldonado', 'Salto'];
-    const GENDERS = ['Todos', 'Hombre', 'Mujer'];
-    const CATEGORIES = ['Todas', '1ª', '2ª', '3ª', '4ª', '5ª', '6ª', '7ª'];
-    const AGES = ['Todas', 'Sub 18', '19-25', '26-30', '>30', '>40', '>50'];
-
-    // Generate mock top 10 players
-    const topPlayers = Array.from({ length: 10 }).map((_, i) => ({
-        rank: i + 1,
-        name: `Jugador ${i + 1}`,
-        avatar: `https://picsum.photos/100/100?random=${100 + i}`,
-        rating: (6.5 - i * 0.1).toFixed(2),
-        points: 2500 - i * 150,
-        matchesWon: 45 - i * 2,
-        winRate: (75 - i * 1.5).toFixed(1) + '%',
-        tournamentsWon: Math.max(0, 5 - i),
-        representedClub: i % 3 === 0 ? (clubOptions[0] ?? null) : (i % 4 === 0 ? (clubOptions[1] ?? null) : null)
-    }));
-
-    // User's mock position
-    const userPosition = {
-        rank: 42,
-        name: currentUser.name,
-        avatar: currentUser.avatar,
-        rating: currentUser.level.toFixed(2),
-        points: 850,
-        matchesWon: 12,
-        winRate: '58.0%',
-        tournamentsWon: currentUser.badges?.length || 0,
-        representedClub: clubOptions[0] ?? null
-    };
-
-    return (
-        <div className="fixed inset-0 bg-dark-900 z-[100] flex flex-col animate-fade-in overflow-y-auto">
-             {/* Header */}
-             <div className="px-4 py-4 flex items-center gap-3 bg-dark-800 border-b border-dark-700 shrink-0 sticky top-0 z-20">
-                <button onClick={onClose} className="p-2 rounded-full hover:bg-dark-700 transition-colors">
-                    <ArrowLeft size={20} className="text-gray-200" />
-                </button>
-                <div>
-                    <h2 className="text-white font-bold text-lg leading-tight flex items-center gap-2">
-                        Ranking Nacional <Crown size={16} className="text-amber-500" fill="currentColor"/>
-                    </h2>
-                    <p className="text-gray-400 text-xs">Uruguay</p>
-                </div>
-            </div>
-
-            <div className="p-4 space-y-6 pb-safe">
-                {/* Filters */}
-                <div className="bg-dark-800 rounded-2xl border border-dark-700 p-4 space-y-4">
-                    <div className="flex items-center gap-2 mb-2">
-                        <Filter size={16} className="text-padel-400" />
-                        <h3 className="text-white font-bold text-sm">Filtros</h3>
-                    </div>
-
-                    <div className="grid grid-cols-5 gap-1.5">
-                        {/* City Filter */}
-                        <div>
-                            <label className="text-[9px] text-gray-500 font-bold uppercase mb-0.5 block truncate">Ciudad</label>
-                            <div className="relative">
-                                <select
-                                    value={selectedCity}
-                                    onChange={(e) => setSelectedCity(e.target.value)}
-                                    className="w-full bg-dark-900 border border-dark-700 text-white text-[10px] rounded-md p-1.5 pr-4 appearance-none focus:outline-none focus:border-padel-500 transition-colors truncate"
-                                >
-                                    {CITIES.map(city => (
-                                        <option key={city} value={city}>{city}</option>
-                                    ))}
-                                </select>
-                                <ChevronDown size={12} className="absolute right-1 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
-                            </div>
-                        </div>
-
-                        {/* Club Filter */}
-                        <div>
-                            <label className="text-[9px] text-gray-500 font-bold uppercase mb-0.5 block truncate">Club</label>
-                            <div className="relative">
-                                <select
-                                    value={selectedClub}
-                                    onChange={(e) => setSelectedClub(e.target.value)}
-                                    className="w-full bg-dark-900 border border-dark-700 text-white text-[10px] rounded-md p-1.5 pr-4 appearance-none focus:outline-none focus:border-padel-500 transition-colors truncate"
-                                >
-                                    <option value="Todos">Todos</option>
-                                    {clubOptions.map(club => (
-                                        <option key={club.id} value={club.id}>{club.name}</option>
-                                    ))}
-                                </select>
-                                <ChevronDown size={12} className="absolute right-1 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
-                            </div>
-                        </div>
-
-                        {/* Gender Filter */}
-                        <div>
-                            <label className="text-[9px] text-gray-500 font-bold uppercase mb-0.5 block truncate">Sexo</label>
-                            <div className="relative">
-                                <select
-                                    value={selectedGender}
-                                    onChange={(e) => setSelectedGender(e.target.value)}
-                                    className="w-full bg-dark-900 border border-dark-700 text-white text-[10px] rounded-md p-1.5 pr-4 appearance-none focus:outline-none focus:border-padel-500 transition-colors truncate"
-                                >
-                                    {GENDERS.map(gender => (
-                                        <option key={gender} value={gender}>{gender}</option>
-                                    ))}
-                                </select>
-                                <ChevronDown size={12} className="absolute right-1 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
-                            </div>
-                        </div>
-
-                        {/* Category Filter */}
-                        <div>
-                            <label className="text-[9px] text-gray-500 font-bold uppercase mb-0.5 block truncate">Categoría</label>
-                            <div className="relative">
-                                <select
-                                    value={selectedCategory}
-                                    onChange={(e) => setSelectedCategory(e.target.value)}
-                                    className="w-full bg-dark-900 border border-dark-700 text-white text-[10px] rounded-md p-1.5 pr-4 appearance-none focus:outline-none focus:border-padel-500 transition-colors truncate"
-                                >
-                                    {CATEGORIES.map(cat => (
-                                        <option key={cat} value={cat}>{cat}</option>
-                                    ))}
-                                </select>
-                                <ChevronDown size={12} className="absolute right-1 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
-                            </div>
-                        </div>
-
-                        {/* Age Filter */}
-                        <div>
-                            <label className="text-[9px] text-gray-500 font-bold uppercase mb-0.5 block truncate">Edad</label>
-                            <div className="relative">
-                                <select
-                                    value={selectedAge}
-                                    onChange={(e) => setSelectedAge(e.target.value)}
-                                    className="w-full bg-dark-900 border border-dark-700 text-white text-[10px] rounded-md p-1.5 pr-4 appearance-none focus:outline-none focus:border-padel-500 transition-colors truncate"
-                                >
-                                    {AGES.map(age => (
-                                        <option key={age} value={age}>{age}</option>
-                                    ))}
-                                </select>
-                                <ChevronDown size={12} className="absolute right-1 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Ranking List */}
-                <div className="bg-dark-800 rounded-2xl border border-dark-700 overflow-hidden">
-                    <div className="p-4 border-b border-dark-700 bg-dark-900/50">
-                        <h3 className="text-white font-bold text-lg flex items-center gap-2">
-                            <Trophy size={18} className="text-amber-400" />
-                            Top 10 Nacional
-                        </h3>
-                        <p className="text-xs text-gray-400 mt-1">
-                            {selectedCity !== 'Todas' ? selectedCity : 'Uruguay'} • {selectedCategory !== 'Todas' ? `Cat. ${selectedCategory}` : 'Todas las categorías'}
-                        </p>
-                    </div>
-
-                    <div className="w-full overflow-hidden">
-                        <table className="w-full text-left border-collapse table-fixed">
-                            <thead>
-                                <tr className="bg-dark-900/80 border-b border-dark-700 text-[9px] text-gray-500 uppercase tracking-tighter">
-                                    <th className="py-2 px-1 font-bold text-center w-6">#</th>
-                                    <th className="py-2 px-1 font-bold w-auto">Jugador</th>
-                                    <th className="py-2 px-1 font-bold text-center w-12">Club</th>
-                                    <th className="py-2 px-1 font-bold text-center w-6">PG</th>
-                                    <th className="py-2 px-1 font-bold text-center w-8">%</th>
-                                    <th className="py-2 px-1 font-bold text-center w-6"><Trophy size={10} className="mx-auto"/></th>
-                                    <th className="py-2 px-1 font-bold text-right w-8">Pts</th>
-                                    <th className="py-2 px-1 font-bold text-right w-8">Rat</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-dark-700">
-                                {topPlayers.map((player) => (
-                                    <tr key={player.rank} className="hover:bg-dark-700/50 transition-colors">
-                                        <td className={`py-2 px-1 text-center font-black text-[10px] ${
-                                            player.rank === 1 ? 'text-amber-400' :
-                                            player.rank === 2 ? 'text-gray-300' :
-                                            player.rank === 3 ? 'text-amber-700' : 'text-gray-500'
-                                        }`}>
-                                            {player.rank}
-                                        </td>
-                                        <td className="py-2 px-1 truncate">
-                                            <div className="flex items-center gap-1.5">
-                                                <img src={player.avatar} alt={player.name} className="w-5 h-5 rounded-full border border-dark-600 shrink-0" />
-                                                <span className="text-white font-bold text-[10px] truncate">{player.name}</span>
-                                            </div>
-                                        </td>
-                                        <td className="py-2 px-1 text-center">
-                                            {player.representedClub ? (
-                                                <div className="flex items-center justify-center gap-1 bg-dark-900 px-1 py-0.5 rounded border border-dark-700 w-max mx-auto">
-                                                    <img src={player.representedClub.image} alt={player.representedClub.name} className="w-3 h-3 rounded-full object-cover shrink-0" />
-                                                    <span className="text-[8px] text-gray-300 font-medium truncate max-w-[24px]">{player.representedClub.name.substring(0,3)}</span>
-                                                </div>
-                                            ) : (
-                                                <span className="text-[10px] text-gray-600">-</span>
-                                            )}
-                                        </td>
-                                        <td className="py-2 px-1 text-center text-white text-[10px]">{player.matchesWon}</td>
-                                        <td className="py-2 px-1 text-center text-white text-[10px]">{player.winRate.replace('.0', '')}</td>
-                                        <td className="py-2 px-1 text-center text-white text-[10px]">
-                                            {player.tournamentsWon > 0 ? (
-                                                <span className="text-amber-400 font-bold">{player.tournamentsWon}</span>
-                                            ) : (
-                                                <span className="text-gray-600">-</span>
-                                            )}
-                                        </td>
-                                        <td className="py-2 px-1 text-right text-gray-300 text-[10px]">{player.points}</td>
-                                        <td className="py-2 px-1 text-right text-padel-400 font-black text-[10px]">{player.rating}</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    {/* User Position Highlight */}
-                    <div className="w-full border-t-2 border-padel-500 bg-padel-900/20 relative">
-                        <div className="absolute inset-0 bg-gradient-to-r from-padel-500/10 to-transparent pointer-events-none"></div>
-                        <table className="w-full text-left border-collapse table-fixed relative z-10">
-                            <tbody>
-                                <tr>
-                                    <td className="py-2 px-1 text-center font-black text-[10px] text-padel-400 w-6">
-                                        {userPosition.rank}
-                                    </td>
-                                    <td className="py-2 px-1 w-auto truncate">
-                                        <div className="flex items-center gap-1.5">
-                                            <img src={userPosition.avatar} alt={userPosition.name} className="w-5 h-5 rounded-full border-2 border-padel-500 shrink-0" />
-                                            <span className="text-white font-bold text-[10px] truncate">Tú</span>
-                                        </div>
-                                    </td>
-                                    <td className="py-2 px-1 text-center w-12">
-                                        {userPosition.representedClub ? (
-                                            <div className="flex items-center justify-center gap-1 bg-dark-900 px-1 py-0.5 rounded border border-dark-700 w-max mx-auto">
-                                                <img src={userPosition.representedClub.image} alt={userPosition.representedClub.name} className="w-3 h-3 rounded-full object-cover shrink-0" />
-                                                <span className="text-[8px] text-gray-300 font-medium truncate max-w-[24px]">{userPosition.representedClub.name.substring(0,3)}</span>
-                                            </div>
-                                        ) : (
-                                            <span className="text-[10px] text-gray-600">-</span>
-                                        )}
-                                    </td>
-                                    <td className="py-2 px-1 text-center text-white text-[10px] w-6">{userPosition.matchesWon}</td>
-                                    <td className="py-2 px-1 text-center text-white text-[10px] w-8">{userPosition.winRate.replace('.0', '')}</td>
-                                    <td className="py-2 px-1 text-center text-white text-[10px] w-6">
-                                        {userPosition.tournamentsWon > 0 ? (
-                                            <span className="text-amber-400 font-bold">{userPosition.tournamentsWon}</span>
-                                        ) : (
-                                            <span className="text-gray-600">-</span>
-                                        )}
-                                    </td>
-                                    <td className="py-2 px-1 text-right text-padel-300 text-[10px] w-8">{userPosition.points}</td>
-                                    <td className="py-2 px-1 text-right text-padel-400 font-black text-[10px] w-8">{userPosition.rating}</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
             </div>
         </div>
     );
@@ -3889,6 +3221,8 @@ const PlayView: React.FC<ViewProps> = ({
     onRequest,
     onLeaveMatch,
     onCancelMatch,
+    onInviteMatch,
+    inviteLoadingMatchId,
     onSubmitResult,
     onConfirmResult,
     onRejectResult,
@@ -4111,6 +3445,8 @@ const PlayView: React.FC<ViewProps> = ({
                                             onRequest={onRequest}
                                             onLeave={onLeaveMatch}
                                             onCancel={onCancelMatch}
+                                            onInvite={onInviteMatch}
+                                            inviteLoading={inviteLoadingMatchId === matchData.id}
                                             onUserClick={onUserClick}
                                             onAddResult={canAddResult ? () => onAddResult && actionableMatch && onAddResult(actionableMatch) : undefined}
                                             className="mb-0 h-full shadow-lg border-dark-600"
@@ -4369,19 +3705,71 @@ const PlayView: React.FC<ViewProps> = ({
     );
 };
 
-const getNotificationActionLabel = (notification: NotificationResponse): string =>
-    notification.type === 'CONFIRM_MATCH_RESULT' || notification.type === 'CONFIRM_TOURNAMENT_RESULT'
-        ? 'Validar'
-        : 'Cargar';
+const getNotificationActionLabel = (notification: NotificationResponse): string => {
+    switch (notification.type) {
+        case 'SUBMIT_MATCH_RESULT':
+        case 'SUBMIT_TOURNAMENT_RESULT':
+            return 'Cargar';
+        case 'CONFIRM_MATCH_RESULT':
+        case 'CONFIRM_TOURNAMENT_RESULT':
+            return 'Validar';
+        case 'CLUB_BOOKING_APPROVED':
+        case 'CLUB_BOOKING_REJECTED':
+        case 'TOURNAMENT_LAUNCHED':
+        case 'CLUB_VERIFICATION_APPROVED':
+        case 'CLUB_VERIFICATION_REJECTED':
+        case 'MATCH_RESULT_REJECTED':
+        case 'TOURNAMENT_RESULT_REJECTED':
+            return 'Abrir';
+        default:
+            return 'Ver';
+    }
+};
 
 const getNotificationActionIcon = (notification: NotificationResponse) => {
-    if (notification.type === 'CONFIRM_MATCH_RESULT' || notification.type === 'CONFIRM_TOURNAMENT_RESULT') {
-        return <ShieldCheck size={16} className="text-amber-400" />;
+    switch (notification.type) {
+        case 'CONFIRM_MATCH_RESULT':
+        case 'CONFIRM_TOURNAMENT_RESULT':
+            return <ShieldCheck size={16} className="text-amber-400" />;
+        case 'MATCH_RESULT_CONFIRMED':
+        case 'TOURNAMENT_RESULT_CONFIRMED':
+            return <CheckCircle size={16} className="text-green-400" />;
+        case 'MATCH_RESULT_REJECTED':
+        case 'TOURNAMENT_RESULT_REJECTED':
+        case 'MATCH_CANCELLED':
+        case 'CLUB_BOOKING_REJECTED':
+        case 'CLUB_VERIFICATION_REJECTED':
+            return <AlertCircle size={16} className="text-red-400" />;
+        case 'CLUB_VERIFICATION_APPROVED':
+        case 'CLUB_BOOKING_APPROVED':
+            return <BadgeCheck size={16} className="text-sky-400" />;
+        case 'TOURNAMENT_LAUNCHED':
+            return <Trophy size={16} className="text-purple-400" />;
+        default:
+            return notification.tournamentMatchId != null || notification.tournamentId != null
+                ? <Trophy size={16} className="text-purple-400" />
+                : <CalendarRange size={16} className="text-padel-400" />;
+    }
+};
+
+const getNotificationDomainLabel = (notification: NotificationResponse): string => {
+    if (notification.type === 'CLUB_BOOKING_APPROVED' || notification.type === 'CLUB_BOOKING_REJECTED') {
+        return 'Reserva';
     }
 
-    return notification.tournamentMatchId != null
-        ? <Trophy size={16} className="text-purple-400" />
-        : <CalendarRange size={16} className="text-padel-400" />;
+    if (notification.type === 'CLUB_VERIFICATION_APPROVED' || notification.type === 'CLUB_VERIFICATION_REJECTED') {
+        return 'Verificacion';
+    }
+
+    if (notification.tournamentMatchId != null || notification.tournamentId != null) {
+        return 'Torneo';
+    }
+
+    if (notification.matchId != null) {
+        return 'Partido social';
+    }
+
+    return 'Sistema';
 };
 
 const formatNotificationDate = (value: string | null): string => {
@@ -4471,11 +3859,7 @@ const NotificationsInboxView: React.FC<{
                                                     <Clock size={11} />
                                                     {formatNotificationDate(notification.createdAt)}
                                                 </span>
-                                                {notification.tournamentMatchId != null ? (
-                                                    <span className="uppercase tracking-wide">Torneo</span>
-                                                ) : (
-                                                    <span className="uppercase tracking-wide">Partido social</span>
-                                                )}
+                                                <span className="uppercase tracking-wide">{getNotificationDomainLabel(notification)}</span>
                                             </div>
                                         </div>
                                     </div>
@@ -4744,44 +4128,6 @@ const CompetitionView: React.FC<ViewProps> = ({
     onJoinTournament,
     onLeaveTournament,
 }) => {
-    // ... (No changes here, keeping existing code)
-    const TOURNAMENTS = [
-        {
-            id: 't1',
-            title: 'Copa Montevideo Open',
-            date: '15-17 Nov',
-            location: 'Carrasco Padel',
-            prizes: '$50.000 Premios',
-            participants: '32 Parejas',
-            status: 'INSCRIPCIÓN ABIERTA',
-            statusColor: 'bg-amber-500 text-dark-900',
-            bg: 'from-dark-800 to-dark-900'
-        },
-        {
-            id: 't2',
-            title: 'Copa Montevideo 2027',
-            date: '10-20 Dic 2027',
-            location: 'World Padel Center',
-            prizes: '$100.000 USD',
-            participants: '64 Parejas',
-            status: 'FUTURO',
-            statusColor: 'bg-purple-500 text-white',
-            bg: 'from-blue-900/40 to-dark-900'
-        },
-        {
-            id: 't3',
-            title: 'Master Final 2024',
-            date: '01-03 Dic',
-            location: 'Top Padel',
-            prizes: 'Equipamiento Pro',
-            participants: '16 Mejores',
-            status: 'ÚLTIMOS CUPOS',
-            statusColor: 'bg-red-500 text-white',
-            bg: 'from-red-900/20 to-dark-900'
-        }
-    ];
-    const hasLegacyTournamentMocks = TOURNAMENTS.length > 0;
-
     const visibleTournaments = [...tournaments]
         .filter(tournament => !tournament.isArchived)
         .sort((left, right) => {
@@ -4852,6 +4198,13 @@ const CompetitionView: React.FC<ViewProps> = ({
             && team.players.some((player: User | null) => player?.id === currentUser.id)
         );
 
+    const isPendingRegistration = (tournament: any) =>
+        Boolean(
+            tournament.isBackendTournament
+            && tournament.backendStatus === 'OPEN'
+            && tournament.currentUserEntryStatus === 'PENDING',
+        );
+
     const isCreator = (tournament: any) => tournament.creatorId === currentUser.id;
 
     const canJoinTournament = (tournament: any) =>
@@ -4875,6 +4228,9 @@ const CompetitionView: React.FC<ViewProps> = ({
         !tournament.isBackendTournament || isCreator(tournament) || isRegistered(tournament);
 
     const getPrimaryActionLabel = (tournament: any) => {
+        if (isPendingRegistration(tournament)) {
+            return 'Completar equipo';
+        }
         if (canJoinTournament(tournament)) {
             return 'Unirme';
         }
@@ -4885,6 +4241,10 @@ const CompetitionView: React.FC<ViewProps> = ({
     };
 
     const handlePrimaryAction = (tournament: any) => {
+        if (isPendingRegistration(tournament)) {
+            onJoinTournament?.(tournament);
+            return;
+        }
         if (canJoinTournament(tournament)) {
             onJoinTournament?.(tournament);
             return;
@@ -4956,7 +4316,7 @@ const CompetitionView: React.FC<ViewProps> = ({
             {/* Tournaments */}
             <div className="flex justify-between items-center mb-4">
                 <h2 className="text-lg font-bold text-white">Torneos Activos</h2>
-                <a href="#" className="text-padel-400 text-sm">Ver todos</a>
+                <span className="text-gray-500 text-sm cursor-default">Ver todos</span>
             </div>
 
             <div className="space-y-4">
@@ -4964,9 +4324,7 @@ const CompetitionView: React.FC<ViewProps> = ({
                     <div className="bg-dark-800 border border-dark-700 rounded-2xl p-4">
                         <h3 className="text-white font-bold text-base mb-1">Aun no hay ligas activas</h3>
                         <p className="text-gray-400 text-sm">
-                            {hasLegacyTournamentMocks
-                                ? 'La vista ya no usa el listado estatico. Cuando haya ligas reales, apareceran aqui desde el backend.'
-                                : 'Cuando haya torneos de liga disponibles, apareceran aqui con su estado real desde el backend.'}
+                            Cuando haya torneos de liga disponibles, apareceran aqui con su estado real desde el backend.
                         </p>
                     </div>
                 )}
@@ -5010,399 +4368,6 @@ const CompetitionView: React.FC<ViewProps> = ({
     )
 }
 
-export const ClubsViewLegacy: React.FC<ViewProps> = ({ currentUser, clubs = [], onBook }) => {
-    // ... (No changes here, keeping existing code)
-    const [selectedClub, setSelectedClub] = useState<Club | null>(null);
-    const [bookingStep, setBookingStep] = useState<'time' | 'config'>('time');
-    const [selectedDate, setSelectedDate] = useState<string>('Hoy');
-    const [selectedTime, setSelectedTime] = useState<string | null>(null);
-    
-    // Booking Configuration State
-    const [matchType, setMatchType] = useState<MatchType>(MatchType.COMPETITIVE);
-    const [isPrivate, setIsPrivate] = useState<boolean>(false);
-    const [levelRange, setLevelRange] = useState<[number, number]>([currentUser.level - 0.5, currentUser.level + 0.5]);
-    const [payFullCourt, setPayFullCourt] = useState<boolean>(false);
-    const [position, setPosition] = useState<'drive' | 'reves'>('reves');
-    const [invitedFriends, setInvitedFriends] = useState<string[]>([]);
-    const [selectedCourt, setSelectedCourt] = useState<number>(1);
-
-    const DATES = ['Hoy', 'Mañana', 'Jue 16', 'Vie 17', 'Sab 18'];
-    const TIME_SLOTS = [
-        { time: '17:00', courts: 2 },
-        { time: '18:30', courts: 0 }, // Full
-        { time: '20:00', courts: 4 },
-        { time: '21:30', courts: 1 },
-        { time: '23:00', courts: 8 }
-    ];
-
-    const handleBookClick = (club: Club) => {
-        setSelectedClub(club);
-        setBookingStep('time');
-        setSelectedTime(null);
-        setSelectedCourt(1);
-    };
-
-    const handleTimeSelect = (time: string, available: number) => {
-        if (available === 0) return;
-        setSelectedTime(time);
-        setTimeout(() => setBookingStep('config'), 200);
-    };
-
-    const handleConfirmBooking = () => {
-        if (!selectedClub || !selectedTime) return;
-
-        const players: (User | null)[] = [currentUser, null, null, null];
-        invitedFriends.forEach((friendId, idx) => {
-             const friend = MOCK_FRIENDS.find(f => f.id === friendId);
-             if (friend && idx < 3) {
-                 players[idx + 1] = { 
-                     ...friend, 
-                     matchesPlayed: 20, 
-                     reputation: 90, 
-                     clubAffiliation: 'c1',
-                     isPremium: false 
-                 } as unknown as User;
-             }
-        });
-
-        const newMatch: Match = {
-            id: `m-${Date.now()}`,
-            clubId: selectedClub.id,
-            clubName: selectedClub.name,
-            backendClubId: getBackendClubId(selectedClub.id),
-            courtName: `Cancha ${selectedCourt}`,
-            date: new Date().toISOString(),
-            time: selectedTime,
-            duration: 90,
-            type: matchType,
-            pricePerPlayer: payFullCourt ? 1800 : 450,
-            currency: 'UYU',
-            players: players,
-            maxPlayers: 4,
-            levelRange: levelRange,
-            isPrivate: isPrivate,
-            status: 'open',
-            pendingPlayerIds: [],
-            rejectedPlayerIds: [],
-            approvedGuestIds: []
-        };
-
-        if (onBook) onBook(newMatch);
-        setSelectedClub(null);
-    };
-
-    const toggleFriend = (id: string) => {
-        if (invitedFriends.includes(id)) {
-            setInvitedFriends(prev => prev.filter(fid => fid !== id));
-        } else {
-            if (invitedFriends.length < 3) {
-                setInvitedFriends(prev => [...prev, id]);
-            }
-        }
-    };
-
-    if (selectedClub) {
-        return (
-            <div className="fixed inset-0 bg-dark-900 z-[100] flex flex-col animate-fade-in">
-                {/* Header */}
-                <div className="px-3 py-3 flex items-center gap-3 bg-dark-800 border-b border-dark-700 shrink-0">
-                    <button onClick={() => bookingStep === 'config' ? setBookingStep('time') : setSelectedClub(null)} className="p-2 rounded-full hover:bg-dark-700 transition-colors">
-                        <ArrowLeft size={18} className="text-gray-200" />
-                    </button>
-                    <div>
-                        <h2 className="text-white font-bold text-base leading-tight">{selectedClub.name}</h2>
-                        <p className="text-gray-400 text-[10px] flex items-center gap-1">
-                            <MapPin size={10} /> {selectedClub.location}
-                        </p>
-                    </div>
-                </div>
-
-                <div className="flex-1 overflow-y-auto">
-                    {bookingStep === 'time' ? (
-                        <div className="p-3 space-y-5">
-                            {/* Date Selector */}
-                            <div>
-                                <h3 className="text-gray-400 text-[10px] font-bold uppercase tracking-wider mb-2">Selecciona Fecha</h3>
-                                <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-                                    {DATES.map(date => (
-                                        <button 
-                                            key={date}
-                                            onClick={() => setSelectedDate(date)}
-                                            className={`min-w-[60px] p-2 rounded-xl flex flex-col items-center gap-0.5 border transition-all ${
-                                                selectedDate === date 
-                                                ? 'bg-padel-600 border-padel-500 text-white shadow-lg' 
-                                                : 'bg-dark-800 border-dark-700 text-gray-400'
-                                            }`}
-                                        >
-                                            <span className="text-[10px] font-medium">{date.split(' ')[0]}</span>
-                                            <span className="text-base font-bold">{date.split(' ')[1] || new Date().getDate()}</span>
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Time Grid - More Compact (3 Cols) */}
-                            <div>
-                                <h3 className="text-gray-400 text-[10px] font-bold uppercase tracking-wider mb-2">Horarios (90 min)</h3>
-                                <div className="grid grid-cols-3 gap-2">
-                                    {TIME_SLOTS.map(slot => (
-                                        <button 
-                                            key={slot.time}
-                                            disabled={slot.courts === 0}
-                                            onClick={() => handleTimeSelect(slot.time, slot.courts)}
-                                            className={`p-2 py-3 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all ${
-                                                slot.courts === 0 
-                                                ? 'bg-dark-800/40 border-dark-800 text-gray-600 cursor-not-allowed opacity-50' 
-                                                : selectedTime === slot.time
-                                                    ? 'bg-padel-600/20 border-padel-500 text-padel-400'
-                                                    : 'bg-dark-800 border-dark-700 text-white active:bg-dark-700'
-                                            }`}
-                                        >
-                                            <span className="text-lg font-bold font-mono leading-none">{slot.time}</span>
-                                            <div className="flex items-center gap-1">
-                                                <div className={`w-1.5 h-1.5 rounded-full ${slot.courts === 0 ? 'bg-red-500' : slot.courts < 3 ? 'bg-amber-500' : 'bg-green-500'}`}></div>
-                                                <span className="text-[9px] font-medium text-gray-400">
-                                                    {slot.courts === 0 ? 'Agotado' : `${slot.courts} Libres`}
-                                                </span>
-                                            </div>
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="p-3 pb-32 space-y-3 relative">
-                            {/* Summary Header */}
-                            <div className="bg-dark-800 p-2.5 rounded-xl border border-dark-700 flex justify-between items-center sticky top-0 z-10 shadow-lg">
-                                <div>
-                                    <p className="text-gray-400 text-[9px] uppercase font-bold">Reserva</p>
-                                    <p className="text-white font-bold text-sm">{selectedDate} • {selectedTime}</p>
-                                </div>
-                                <div className="text-right">
-                                    <p className="text-gray-400 text-[9px] uppercase font-bold">Duración</p>
-                                    <p className="text-white font-bold text-sm">1:30 hs</p>
-                                </div>
-                            </div>
-
-                            {/* 1. Type */}
-                            <div>
-                                <label className="text-gray-400 text-[10px] font-bold uppercase tracking-wider mb-1.5 block">Tipo de Partido</label>
-                                <div className="flex bg-dark-800 p-1 rounded-xl border border-dark-700">
-                                    <button 
-                                        onClick={() => setMatchType(MatchType.COMPETITIVE)}
-                                        className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold transition-all flex items-center justify-center gap-1 ${matchType === MatchType.COMPETITIVE ? 'bg-amber-500 text-dark-900 shadow' : 'text-gray-400'}`}
-                                    >
-                                        <Trophy size={12} /> Por Puntos
-                                    </button>
-                                    <button 
-                                        onClick={() => setMatchType(MatchType.FRIENDLY)}
-                                        className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold transition-all flex items-center justify-center gap-1 ${matchType === MatchType.FRIENDLY ? 'bg-blue-500 text-white shadow' : 'text-gray-400'}`}
-                                    >
-                                        <Zap size={12} /> Recreativo
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* 2. Privacy */}
-                            <div>
-                                <label className="text-gray-400 text-[10px] font-bold uppercase tracking-wider mb-1.5 block">Privacidad</label>
-                                <div className="flex bg-dark-800 p-1 rounded-xl border border-dark-700">
-                                    <button 
-                                        onClick={() => setIsPrivate(false)}
-                                        className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold transition-all flex items-center justify-center gap-1 ${!isPrivate ? 'bg-padel-600 text-white shadow' : 'text-gray-400'}`}
-                                    >
-                                        <Grid size={12} /> Abierto
-                                    </button>
-                                    <button 
-                                        onClick={() => setIsPrivate(true)}
-                                        className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold transition-all flex items-center justify-center gap-1 ${isPrivate ? 'bg-dark-600 text-white shadow' : 'text-gray-400'}`}
-                                    >
-                                        <Lock size={12} /> Privado
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* 3. Level */}
-                            <div>
-                                <div className="flex justify-between items-center mb-1">
-                                    <label className="text-gray-400 text-[10px] font-bold uppercase tracking-wider">Nivel Admitido</label>
-                                    <span className="text-padel-400 text-[10px] font-bold">{levelRange[0].toFixed(1)} - {levelRange[1].toFixed(1)}</span>
-                                </div>
-                                <input 
-                                    type="range" 
-                                    min="1" max="7" step="0.5"
-                                    value={levelRange[1]}
-                                    onChange={(e) => setLevelRange([parseFloat(e.target.value) - 1.0, parseFloat(e.target.value)])}
-                                    className="w-full h-1.5 bg-dark-700 rounded-lg appearance-none cursor-pointer accent-padel-500 block my-2"
-                                />
-                            </div>
-
-                            {/* 6. Position */}
-                            <div>
-                                <label className="text-gray-400 text-[10px] font-bold uppercase tracking-wider mb-1.5 block">Tu Posición</label>
-                                <div className="flex gap-2">
-                                    <button 
-                                        onClick={() => setPosition('reves')}
-                                        className={`flex-1 h-9 rounded-lg border flex items-center justify-center text-[10px] font-bold transition-all ${position === 'reves' ? 'border-padel-500 bg-padel-500/10 text-white' : 'border-dark-700 text-gray-500'}`}
-                                    >
-                                        Revés (Izq)
-                                    </button>
-                                    <button 
-                                        onClick={() => setPosition('drive')}
-                                        className={`flex-1 h-9 rounded-lg border flex items-center justify-center text-[10px] font-bold transition-all ${position === 'drive' ? 'border-padel-500 bg-padel-500/10 text-white' : 'border-dark-700 text-gray-500'}`}
-                                    >
-                                        Drive (Der)
-                                    </button>
-                                </div>
-                            </div>
-
-                             {/* 5. Guests / Recommendations */}
-                             <div>
-                                <div className="flex justify-between items-center mb-1.5">
-                                    <label className="text-gray-400 text-[10px] font-bold uppercase tracking-wider">Invitar Jugadores</label>
-                                    <button className="text-padel-400 text-[10px] flex items-center gap-1"><UserPlus size={10}/> Buscar</button>
-                                </div>
-                                <div className="flex gap-2 overflow-x-auto pb-2 -mx-3 px-3 scrollbar-hide">
-                                    {MOCK_FRIENDS.map(friend => {
-                                        const isSelected = invitedFriends.includes(friend.id);
-                                        return (
-                                            <button 
-                                                key={friend.id}
-                                                onClick={() => toggleFriend(friend.id)}
-                                                className={`min-w-[64px] p-1.5 rounded-xl border transition-all relative ${isSelected ? 'bg-padel-500/20 border-padel-500' : 'bg-dark-800 border-dark-700'}`}
-                                            >
-                                                {isSelected && <div className="absolute top-1 right-1 w-2.5 h-2.5 bg-padel-500 rounded-full border border-dark-900 z-10"></div>}
-                                                {friend.frequent && <span className="absolute top-0 left-0 bg-amber-500 text-dark-900 text-[7px] px-1 rounded-br font-bold">TOP</span>}
-                                                
-                                                <div className="flex flex-col items-center gap-1">
-                                                    <img src={friend.avatar} className={`w-8 h-8 rounded-full object-cover ${isSelected ? 'ring-2 ring-padel-500' : 'opacity-80'}`} />
-                                                    <span className={`text-[9px] font-bold leading-tight truncate w-full text-center ${isSelected ? 'text-white' : 'text-gray-400'}`}>{friend.name.split(' ')[0]}</span>
-                                                </div>
-                                            </button>
-                                        )
-                                    })}
-                                </div>
-                            </div>
-
-                            {/* 7. Court Selection */}
-                            <div>
-                                <label className="text-gray-400 text-[10px] font-bold uppercase tracking-wider mb-1.5 block">Seleccionar Cancha</label>
-                                <div className="relative">
-                                    <select 
-                                        value={selectedCourt}
-                                        onChange={(e) => setSelectedCourt(Number(e.target.value))}
-                                        className="w-full bg-dark-800 border border-dark-700 text-white text-sm rounded-xl px-3 py-2.5 appearance-none focus:outline-none focus:border-padel-500"
-                                    >
-                                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(num => (
-                                            <option key={num} value={num}>Cancha {num}</option>
-                                        ))}
-                                    </select>
-                                    <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                                </div>
-                            </div>
-
-                            {/* 4. Payment */}
-                            <div className="bg-dark-800 rounded-xl p-2.5 border border-dark-700">
-                                <div className="flex items-center justify-between mb-2">
-                                    <div className="flex items-center gap-2">
-                                        <Wallet size={14} className="text-gray-400"/>
-                                        <span className="text-xs font-bold text-white">Pago</span>
-                                    </div>
-                                    <span className="text-base font-bold text-white font-mono">$ {payFullCourt ? 1800 : 450}</span>
-                                </div>
-                                <div className="flex gap-2">
-                                    <button 
-                                        onClick={() => setPayFullCourt(false)}
-                                        className={`flex-1 py-1 rounded text-[9px] font-bold border transition-colors ${!payFullCourt ? 'bg-white text-dark-900 border-white' : 'border-dark-600 text-gray-400'}`}
-                                    >
-                                        Mi Parte
-                                    </button>
-                                    <button 
-                                        onClick={() => setPayFullCourt(true)}
-                                        className={`flex-1 py-1 rounded text-[9px] font-bold border transition-colors ${payFullCourt ? 'bg-white text-dark-900 border-white' : 'border-dark-600 text-gray-400'}`}
-                                    >
-                                        Completo
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-                </div>
-
-                {/* Sticky Footer for Config Step */}
-                {bookingStep === 'config' && (
-                    <div className="absolute bottom-0 left-0 right-0 p-4 pb-safe bg-dark-900/95 backdrop-blur-md border-t border-dark-700 z-20">
-                         <Button fullWidth size="md" onClick={handleConfirmBooking} className="font-bold shadow-xl shadow-padel-500/20">
-                            Confirmar Reserva
-                        </Button>
-                    </div>
-                )}
-            </div>
-        );
-    }
-
-    return (
-         <div className="pb-24 pt-4 px-4">
-            <header className="mb-6">
-                <h1 className="text-2xl font-bold text-white">Reservas</h1>
-                <div className="mt-2 relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" size={18} />
-                    <input 
-                        type="text" 
-                        placeholder="Buscar por nombre o zona..." 
-                        className="w-full bg-dark-800 border border-dark-700 text-white pl-10 pr-4 py-3 rounded-xl focus:outline-none focus:border-padel-500 transition-colors placeholder:text-dark-700"
-                    />
-                </div>
-            </header>
-
-            <div className="space-y-4">
-                {clubs.length === 0 && (
-                    <div className="bg-dark-800 rounded-2xl border border-dark-700 p-4">
-                        <h3 className="text-white font-bold text-base mb-1">No hay clubes disponibles</h3>
-                        <p className="text-gray-400 text-sm">
-                            Cuando el backend tenga clubes cargados, apareceran aqui para reservar.
-                        </p>
-                    </div>
-                )}
-
-                {clubs.map(club => (
-                    <div key={club.id} className="bg-dark-800 rounded-2xl overflow-hidden border border-dark-700 group relative">
-                        <div className="h-28 bg-gray-700 relative">
-                            {club.image ? (
-                                <img src={club.image} alt={club.name} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
-                            ) : (
-                                <div className={`w-full h-full bg-gradient-to-br ${getClubVisualGradient(club.name)} flex items-end justify-between px-4 py-3`}>
-                                    <div>
-                                        <div className="text-white/80 text-[10px] font-bold uppercase tracking-[0.24em]">Club</div>
-                                        <div className="text-white font-black text-2xl leading-none">{getClubInitials(club.name)}</div>
-                                    </div>
-                                    {club.isIntegrated && (
-                                        <div className="bg-white/10 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-1 rounded-full border border-white/15 uppercase tracking-wide">
-                                            Integrado
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                        <div className="p-3">
-                            <h3 className="text-white font-bold text-base mb-0.5">{club.name}</h3>
-                            <p className="text-gray-400 text-xs flex items-center gap-1 mb-2.5">
-                                <MapPin size={12} /> {club.location}
-                            </p>
-                            <div className="flex gap-2">
-                                <Button size="sm" fullWidth onClick={() => handleBookClick(club)} className="text-xs py-2">Reservar</Button>
-                                <Button variant="secondary" size="sm" className="px-3 py-2">
-                                    <ChevronRight size={16} />
-                                </Button>
-                            </div>
-                        </div>
-                    </div>
-                ))}
-            </div>
-         </div>
-    )
-}
-
 const ProfileView: React.FC<ViewProps> = ({
     currentUser,
     rankingPosition,
@@ -5418,9 +4383,19 @@ const ProfileView: React.FC<ViewProps> = ({
     onOpenNationalRanking,
     onOpenMatchHistory,
     onOpenPlayerClubVerification,
+    onOpenEditProfile,
+    notificationPreferences,
+    notificationPreferencesLoading = false,
+    notificationPreferencesSaving = false,
+    onUpdateNotificationPreferences,
+    accountDeletionRequest,
+    accountDeletionLoading = false,
+    accountDeletionSaving = false,
+    onRequestAccountDeletion,
 }) => {
     // State for Filter
     const [timeRange, setTimeRange] = useState<'LAST_10' | '1M' | '3M' | '6M' | '1Y' | 'ALL'>('LAST_10');
+    const [accountDeletionReason, setAccountDeletionReason] = useState('');
 
     const hasHistory = ratingHistory.length > 0;
 
@@ -5558,11 +4533,49 @@ const ProfileView: React.FC<ViewProps> = ({
         { label: 'TODO', value: 'ALL' },
     ];
 
-    const favoriteClub = getFavoriteClubRanking(clubRankings);
-    const topPartner = getTopPartner(topPartners);
-    const topRival = getTopRival(topRivals);
+  const favoriteClub = getFavoriteClubRanking(clubRankings);
+  const topPartner = getTopPartner(topPartners);
+  const topRival = getTopRival(topRivals);
+  const representedClubLabel = currentUser.representedClubName?.trim() || 'Sin club';
+  const cityLabel = currentUser.city?.trim() || 'Sin ciudad';
+  const preferredSideLabel = formatPreferredSide(currentUser.preferredSide);
+  const operationalNotificationsEnabled = notificationPreferences?.operationalNotificationsEnabled ?? false;
+  const activityTrackingEnabled = notificationPreferences?.activityTrackingEnabled ?? false;
+  const notificationPreferenceTimestamp = notificationPreferences?.operationalNotificationsUpdatedAt
+    ?? notificationPreferences?.activityTrackingUpdatedAt
+    ?? null;
+  const notificationPreferenceUpdatedAt = notificationPreferenceTimestamp
+    ? new Date(notificationPreferenceTimestamp).toLocaleDateString('es-UY', { day: '2-digit', month: 'short', year: 'numeric' })
+    : null;
+  const accountDeletionRequestedAt = accountDeletionRequest?.requestedAt
+    ? new Date(accountDeletionRequest.requestedAt).toLocaleDateString('es-UY', { day: '2-digit', month: 'short', year: 'numeric' })
+    : null;
 
-    return (
+  const handlePreferenceToggle = (key: 'allowOperationalNotifications' | 'allowActivityTracking', checked: boolean) => {
+    if (!onUpdateNotificationPreferences || notificationPreferencesSaving) {
+      return;
+    }
+
+    void onUpdateNotificationPreferences({
+      allowOperationalNotifications: key === 'allowOperationalNotifications' ? checked : operationalNotificationsEnabled,
+      allowActivityTracking: key === 'allowActivityTracking' ? checked : activityTrackingEnabled,
+    });
+  };
+
+  const handleAccountDeletionSubmit = () => {
+    if (!onRequestAccountDeletion || accountDeletionSaving || accountDeletionRequest?.requested) {
+      return;
+    }
+
+    const confirmed = window.confirm('Vas a iniciar una solicitud de eliminacion de cuenta. No borra datos automaticamente ni cierra tu sesion en este momento. Queres continuar?');
+    if (!confirmed) {
+      return;
+    }
+
+    void onRequestAccountDeletion(accountDeletionReason);
+  };
+
+  return (
         <div className="pb-24 pt-4 px-4">
             <div className="flex flex-col items-center mb-6 pt-4">
                 <div className="relative">
@@ -5576,7 +4589,7 @@ const ProfileView: React.FC<ViewProps> = ({
                 </div>
                 <h1 className="text-xl font-bold text-white mt-3">{currentUser.name}</h1>
                 <div className="flex items-center gap-2 mt-1">
-                    <p className="text-gray-400 text-sm">Nivel <span className="text-white font-bold">{currentUser.level.toFixed(2)}</span> • Categoría {currentUser.categoryName || 'Sexta'}</p>
+                    <p className="text-gray-400 text-sm">Rating <span className="text-white font-bold">{currentUser.level.toFixed(2)}</span> • Categoria {currentUser.categoryName || 'Sexta'}</p>
                     {currentUser.verificationStatus === 'verified' ? (
                         <div className="flex items-center gap-1 text-[10px] text-green-400 font-bold bg-green-500/10 px-1.5 py-0.5 rounded border border-green-500/20">
                             <BadgeCheck size={10} /> Verificado
@@ -5593,6 +4606,30 @@ const ProfileView: React.FC<ViewProps> = ({
                 </div>
                 <div className="flex gap-1 mt-1">
                     {[1,2,3,4,5].map(s => <Star key={s} size={12} className="text-amber-400" fill="currentColor" />)}
+                </div>
+                {onOpenEditProfile && (
+                    <button
+                        onClick={onOpenEditProfile}
+                        className="mt-4 inline-flex items-center gap-2 bg-dark-800 hover:bg-dark-700 border border-dark-700 text-white text-sm font-bold px-4 py-2 rounded-xl transition-colors"
+                    >
+                        <Pencil size={14} />
+                        Editar perfil
+                    </button>
+                )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 mb-6">
+                <div className="bg-dark-800 p-4 rounded-xl border border-dark-700">
+                    <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Posicion</p>
+                    <p className="text-white font-bold text-sm">{preferredSideLabel}</p>
+                </div>
+                <div className="bg-dark-800 p-4 rounded-xl border border-dark-700">
+                    <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Ciudad</p>
+                    <p className="text-white font-bold text-sm">{cityLabel}</p>
+                </div>
+                <div className="bg-dark-800 p-4 rounded-xl border border-dark-700">
+                    <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Club</p>
+                    <p className="text-white font-bold text-sm truncate">{representedClubLabel}</p>
                 </div>
             </div>
 
@@ -5616,6 +4653,116 @@ const ProfileView: React.FC<ViewProps> = ({
                     </div>
                     <ChevronRight size={18} className="text-gray-500 shrink-0 mt-1" />
                 </button>
+            )}
+
+            {currentUser.accountType === 'player' && onUpdateNotificationPreferences && (
+                <div className="mb-6 bg-dark-800 border border-dark-700 rounded-2xl p-4">
+                    <div className="flex items-start gap-3 mb-4">
+                        <div className="bg-padel-500/10 p-2.5 rounded-full border border-padel-500/20">
+                            <Bell size={18} className="text-padel-400" />
+                        </div>
+                        <div className="flex-1">
+                            <h3 className="text-white font-bold text-sm">Preferencias de notificaciones</h3>
+                            <p className="text-gray-400 text-xs leading-relaxed mt-1">
+                                Controla avisos operativos de partidos, torneos, reservas y verificaciones. El permiso del telefono se pide solo en la app mobile.
+                            </p>
+                        </div>
+                    </div>
+
+                    {notificationPreferencesLoading ? (
+                        <div className="text-xs text-gray-400 bg-dark-900/60 border border-dark-700 rounded-xl px-3 py-2">
+                            Cargando preferencias...
+                        </div>
+                    ) : (
+                        <div className="space-y-3">
+                            <label className="flex items-center justify-between gap-3 bg-dark-900/60 border border-dark-700 rounded-xl px-3 py-3">
+                                <div>
+                                    <p className="text-white text-sm font-bold">Notificaciones operativas</p>
+                                    <p className="text-gray-400 text-xs">Push e inbox para resultados, reservas, torneos y validaciones.</p>
+                                </div>
+                                <input
+                                    type="checkbox"
+                                    checked={operationalNotificationsEnabled}
+                                    disabled={notificationPreferencesSaving}
+                                    onChange={event => handlePreferenceToggle('allowOperationalNotifications', event.target.checked)}
+                                    className="w-5 h-5 accent-padel-500"
+                                />
+                            </label>
+
+                            <label className="flex items-center justify-between gap-3 bg-dark-900/60 border border-dark-700 rounded-xl px-3 py-3">
+                                <div>
+                                    <p className="text-white text-sm font-bold">Analisis de actividad</p>
+                                    <p className="text-gray-400 text-xs">Permite usar actividad de juego para estadisticas y mejoras del perfil.</p>
+                                </div>
+                                <input
+                                    type="checkbox"
+                                    checked={activityTrackingEnabled}
+                                    disabled={notificationPreferencesSaving}
+                                    onChange={event => handlePreferenceToggle('allowActivityTracking', event.target.checked)}
+                                    className="w-5 h-5 accent-padel-500"
+                                />
+                            </label>
+
+                            <p className="text-[10px] text-gray-500">
+                                {notificationPreferencesSaving
+                                    ? 'Guardando preferencias...'
+                                    : notificationPreferenceUpdatedAt
+                                        ? `Ultima actualizacion: ${notificationPreferenceUpdatedAt}`
+                                        : 'Todavia no hay actualizacion registrada.'}
+                            </p>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {currentUser.accountType === 'player' && onRequestAccountDeletion && (
+                <div className="mb-6 bg-red-950/20 border border-red-500/20 rounded-2xl p-4">
+                    <div className="flex items-start gap-3 mb-4">
+                        <div className="bg-red-500/10 p-2.5 rounded-full border border-red-500/20">
+                            <Trash2 size={18} className="text-red-300" />
+                        </div>
+                        <div className="flex-1">
+                            <h3 className="text-white font-bold text-sm">Eliminar cuenta</h3>
+                            <p className="text-gray-400 text-xs leading-relaxed mt-1">
+                                Desde aca podes iniciar una solicitud de eliminacion. El equipo procesara la baja segun la politica de retencion y auditoria.
+                            </p>
+                        </div>
+                    </div>
+
+                    {accountDeletionLoading ? (
+                        <div className="text-xs text-gray-400 bg-dark-900/60 border border-dark-700 rounded-xl px-3 py-2">
+                            Consultando estado de la solicitud...
+                        </div>
+                    ) : accountDeletionRequest?.requested ? (
+                        <div className="bg-dark-900/60 border border-red-500/20 rounded-xl px-3 py-3">
+                            <p className="text-red-200 text-sm font-bold">Solicitud registrada</p>
+                            <p className="text-gray-400 text-xs mt-1">
+                                {accountDeletionRequestedAt
+                                    ? `Recibida el ${accountDeletionRequestedAt}.`
+                                    : 'Recibida correctamente.'} No hace falta volver a enviarla.
+                            </p>
+                        </div>
+                    ) : (
+                        <div className="space-y-3">
+                            <textarea
+                                value={accountDeletionReason}
+                                onChange={event => setAccountDeletionReason(event.target.value)}
+                                maxLength={1000}
+                                rows={3}
+                                placeholder="Motivo opcional"
+                                className="w-full bg-dark-900/60 border border-dark-700 rounded-xl px-3 py-2 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:border-red-400"
+                            />
+                            <button
+                                type="button"
+                                onClick={handleAccountDeletionSubmit}
+                                disabled={accountDeletionSaving}
+                                className="w-full bg-red-500/10 hover:bg-red-500/20 disabled:opacity-60 border border-red-500/30 text-red-200 text-sm font-bold px-4 py-3 rounded-xl transition-colors"
+                            >
+                                {accountDeletionSaving ? 'Enviando solicitud...' : 'Solicitar eliminacion de cuenta'}
+                            </button>
+                        </div>
+                    )}
+                </div>
             )}
 
             {/* Coach Insight Card */}
@@ -5910,6 +5057,8 @@ export default function App() {
   const [selectedMatchForResult, setSelectedMatchForResult] = useState<Match | null>(null);
   const [showNotificationsInbox, setShowNotificationsInbox] = useState(false);
   const [showProfileMatchHistory, setShowProfileMatchHistory] = useState(false);
+  const [showEditPlayerProfile, setShowEditPlayerProfile] = useState(false);
+  const [savingPlayerProfile, setSavingPlayerProfile] = useState(false);
   const [clubCatalog, setClubCatalog] = useState<Club[] | null>(null);
   const [tournaments, setTournaments] = useState<any[]>([]);
   const [leagueTournamentCatalog, setLeagueTournamentCatalog] = useState<any[]>([]);
@@ -5932,9 +5081,36 @@ export default function App() {
   const [myMatchesByScope, setMyMatchesByScope] = useState<ScopedMyMatches>(EMPTY_SCOPED_MY_MATCHES);
   const [pendingActions, setPendingActions] = useState<PendingActionResponse[]>([]);
   const [notifications, setNotifications] = useState<NotificationResponse[]>([]);
+  const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferencesResponse | null>(null);
+  const [notificationPreferencesLoading, setNotificationPreferencesLoading] = useState(false);
+  const [notificationPreferencesSaving, setNotificationPreferencesSaving] = useState(false);
+  const [accountDeletionRequest, setAccountDeletionRequest] = useState<AccountDeletionResponse | null>(null);
+  const [accountDeletionLoading, setAccountDeletionLoading] = useState(false);
+  const [accountDeletionSaving, setAccountDeletionSaving] = useState(false);
   const [tournamentSelectablePlayers, setTournamentSelectablePlayers] = useState<User[]>([]);
   const [tournamentClubOptions, setTournamentClubOptions] = useState<Club[]>([]);
   const [postMatchResult, setPostMatchResult] = useState<{ oldRating: number, newRating: number, delta: number } | null>(null);
+  const [pendingMatchInviteToken, setPendingMatchInviteToken] = useState<string | null>(null);
+  const [pendingMatchInvitePreview, setPendingMatchInvitePreview] = useState<MatchInvitePreviewResponse | null>(null);
+  const [pendingMatchInviteLoading, setPendingMatchInviteLoading] = useState(false);
+  const [pendingMatchInviteError, setPendingMatchInviteError] = useState<string | null>(null);
+  const [joiningMatchInvite, setJoiningMatchInvite] = useState(false);
+  const [generatedMatchInvite, setGeneratedMatchInvite] = useState<MatchInviteLinkResponse | null>(null);
+  const [generatedMatchInviteCopied, setGeneratedMatchInviteCopied] = useState(false);
+  const [generatedMatchInviteSharing, setGeneratedMatchInviteSharing] = useState(false);
+  const [inviteLoadingMatchId, setInviteLoadingMatchId] = useState<string | null>(null);
+  const [pendingTournamentInviteToken, setPendingTournamentInviteToken] = useState<string | null>(null);
+  const [pendingTournamentInvitePreview, setPendingTournamentInvitePreview] = useState<TournamentInvitePreviewResponse | null>(null);
+  const [pendingTournamentInviteLoading, setPendingTournamentInviteLoading] = useState(false);
+  const [pendingTournamentInviteError, setPendingTournamentInviteError] = useState<string | null>(null);
+  const [joiningTournamentInvite, setJoiningTournamentInvite] = useState(false);
+  const [generatedTournamentInvite, setGeneratedTournamentInvite] = useState<TournamentInviteLinkResponse | null>(null);
+  const [generatedTournamentInviteCopied, setGeneratedTournamentInviteCopied] = useState(false);
+  const [generatedTournamentInviteSharing, setGeneratedTournamentInviteSharing] = useState(false);
+  const [inviteLoadingTournamentId, setInviteLoadingTournamentId] = useState<string | null>(null);
+  const [savingTournamentTeamName, setSavingTournamentTeamName] = useState(false);
+  const [tournamentToRegister, setTournamentToRegister] = useState<any | null>(null);
+  const [submittingTournamentRegistration, setSubmittingTournamentRegistration] = useState(false);
 
   const hasStoredToken = () => {
     if (typeof window === 'undefined') {
@@ -5942,6 +5118,27 @@ export default function App() {
     }
 
     return Boolean(window.localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY));
+  };
+
+  const copyTextToClipboard = async (value: string) => {
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return;
+    }
+
+    if (typeof document === 'undefined') {
+      throw new Error('Clipboard API unavailable');
+    }
+
+    const textArea = document.createElement('textarea');
+    textArea.value = value;
+    textArea.setAttribute('readonly', 'true');
+    textArea.style.position = 'absolute';
+    textArea.style.left = '-9999px';
+    document.body.appendChild(textArea);
+    textArea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textArea);
   };
 
   const expectedBackendRoleForAccountMode = (mode: 'player' | 'club') => (
@@ -5987,6 +5184,17 @@ export default function App() {
     setTimeout(() => setNotification(null), 4000);
   };
 
+  const showCriticalRefreshError = (error: unknown, fallbackMessage: string) => {
+    console.error(error);
+
+    if (!IS_PRODUCTION_LIKE_ENV) {
+      return;
+    }
+
+    setNotification(fallbackMessage);
+    setTimeout(() => setNotification(null), 5000);
+  };
+
   const syncCurrentUserVerificationStatus = (
     requiresClubVerification: boolean,
     clubVerificationStatus: 'NOT_REQUIRED' | 'PENDING' | 'VERIFIED' | 'REJECTED',
@@ -6025,17 +5233,17 @@ export default function App() {
 
     const user = userOverride ?? currentUser;
     const clubsRequest = backendApi.getClubs().catch(
-      () => [] as Awaited<ReturnType<typeof backendApi.getClubs>>,
+      criticalRefreshFallback([] as Awaited<ReturnType<typeof backendApi.getClubs>>),
     );
     const myMatchesRequest = user.backendPlayerProfileId
       ? backendApi.getMyMatches()
       : Promise.resolve([] as Awaited<ReturnType<typeof backendApi.getMyMatches>>);
     const scopeRequests = user.backendPlayerProfileId
       ? Promise.all([
-          backendApi.getMyMatches('upcoming').catch(() => [] as Awaited<ReturnType<typeof backendApi.getMyMatches>>),
-          backendApi.getMyMatches('completed').catch(() => [] as Awaited<ReturnType<typeof backendApi.getMyMatches>>),
-          backendApi.getMyMatches('cancelled').catch(() => [] as Awaited<ReturnType<typeof backendApi.getMyMatches>>),
-          backendApi.getMyMatches('pending_result').catch(() => [] as Awaited<ReturnType<typeof backendApi.getMyMatches>>),
+          backendApi.getMyMatches('upcoming').catch(criticalRefreshFallback([] as Awaited<ReturnType<typeof backendApi.getMyMatches>>)),
+          backendApi.getMyMatches('completed').catch(criticalRefreshFallback([] as Awaited<ReturnType<typeof backendApi.getMyMatches>>)),
+          backendApi.getMyMatches('cancelled').catch(criticalRefreshFallback([] as Awaited<ReturnType<typeof backendApi.getMyMatches>>)),
+          backendApi.getMyMatches('pending_result').catch(criticalRefreshFallback([] as Awaited<ReturnType<typeof backendApi.getMyMatches>>)),
         ] as const)
       : Promise.resolve([
           [],
@@ -6078,13 +5286,13 @@ export default function App() {
     const user = userOverride ?? currentUser;
     const [clubs, playerProfiles, tournamentResponses] = await Promise.all([
       backendApi.getClubs().catch(
-        () => [] as Awaited<ReturnType<typeof backendApi.getClubs>>,
+        criticalRefreshFallback([] as Awaited<ReturnType<typeof backendApi.getClubs>>),
       ),
       backendApi.getPlayerProfiles().catch(
-        () => [] as Awaited<ReturnType<typeof backendApi.getPlayerProfiles>>,
+        criticalRefreshFallback([] as Awaited<ReturnType<typeof backendApi.getPlayerProfiles>>),
       ),
       backendApi.getTournaments().catch(
-        () => [] as Awaited<ReturnType<typeof backendApi.getTournaments>>,
+        criticalRefreshFallback([] as Awaited<ReturnType<typeof backendApi.getTournaments>>),
       ),
     ]);
 
@@ -6101,7 +5309,8 @@ export default function App() {
     const isRelevantOperationalTournament = (
       tournament: Awaited<ReturnType<typeof backendApi.getTournaments>>[number],
     ) =>
-      tournament.createdByPlayerProfileId === user.backendPlayerProfileId
+      (user.accountType === 'club' && user.managedClubId != null && tournament.clubId === user.managedClubId)
+      || tournament.createdByPlayerProfileId === user.backendPlayerProfileId
       || tournament.entries.some(entry =>
         entry.members.some(member => member.playerProfileId === user.backendPlayerProfileId),
       );
@@ -6115,11 +5324,11 @@ export default function App() {
         const [tournamentMatches, standings] = await Promise.all([
           shouldLoadOperationalData
             ? backendApi.getTournamentMatches(tournament.id).catch(
-                () => [] as Awaited<ReturnType<typeof backendApi.getTournamentMatches>>,
+                criticalRefreshFallback([] as Awaited<ReturnType<typeof backendApi.getTournamentMatches>>),
               )
             : Promise.resolve([] as Awaited<ReturnType<typeof backendApi.getTournamentMatches>>),
           shouldLoadOperationalData
-            ? backendApi.getTournamentStandings(tournament.id).catch(() => null)
+            ? backendApi.getTournamentStandings(tournament.id).catch(criticalRefreshFallback(null))
             : Promise.resolve(null),
         ]);
 
@@ -6152,7 +5361,9 @@ export default function App() {
       ...backendTournamentSnapshots
         .filter(snapshot => snapshot.isRelevant)
         .map(snapshot => snapshot.tournament),
-      ...prevTournaments.filter(tournament => !tournament.isBackendTournament),
+      ...(ENABLE_LEGACY_LOCAL_FLOWS
+        ? prevTournaments.filter(tournament => !tournament.isBackendTournament)
+        : []),
     ]);
 
     replaceBackendTournamentMatches(
@@ -6172,26 +5383,26 @@ export default function App() {
 
     const user = userOverride ?? currentUser;
     const rankingsRequest = backendApi.getRankings().catch(
-      () => [] as Awaited<ReturnType<typeof backendApi.getRankings>>,
+      criticalRefreshFallback([] as Awaited<ReturnType<typeof backendApi.getRankings>>),
     );
     const historyRequest = user.backendPlayerProfileId
       ? backendApi.getMyRatingHistory().catch(
-          () => [] as Awaited<ReturnType<typeof backendApi.getMyRatingHistory>>,
+          criticalRefreshFallback([] as Awaited<ReturnType<typeof backendApi.getMyRatingHistory>>),
         )
       : Promise.resolve([] as Awaited<ReturnType<typeof backendApi.getMyRatingHistory>>);
     const topPartnersRequest = user.backendPlayerProfileId
       ? backendApi.getMyTopPartners().catch(
-          () => [] as Awaited<ReturnType<typeof backendApi.getMyTopPartners>>,
+          criticalRefreshFallback([] as Awaited<ReturnType<typeof backendApi.getMyTopPartners>>),
         )
       : Promise.resolve([] as Awaited<ReturnType<typeof backendApi.getMyTopPartners>>);
     const topRivalsRequest = user.backendPlayerProfileId
       ? backendApi.getMyTopRivals().catch(
-          () => [] as Awaited<ReturnType<typeof backendApi.getMyTopRivals>>,
+          criticalRefreshFallback([] as Awaited<ReturnType<typeof backendApi.getMyTopRivals>>),
         )
       : Promise.resolve([] as Awaited<ReturnType<typeof backendApi.getMyTopRivals>>);
     const clubRankingsRequest = user.backendPlayerProfileId
       ? backendApi.getMyClubRankings().catch(
-          () => [] as Awaited<ReturnType<typeof backendApi.getMyClubRankings>>,
+          criticalRefreshFallback([] as Awaited<ReturnType<typeof backendApi.getMyClubRankings>>),
         )
       : Promise.resolve([] as Awaited<ReturnType<typeof backendApi.getMyClubRankings>>);
 
@@ -6223,6 +5434,265 @@ export default function App() {
 
     setPendingActions(nextPendingActions);
     setNotifications(nextNotifications);
+  };
+
+  const resolveConsentPreferencesVersion = async (): Promise<string> => {
+    if (notificationPreferences?.consentPreferencesVersion) {
+      return notificationPreferences.consentPreferencesVersion;
+    }
+
+    const legalDocuments = await backendApi.getLegalDocuments();
+    const consentDocument = legalDocuments.find(document => document.type === 'CONSENT_PREFERENCES_NOTICE');
+    if (!consentDocument?.version) {
+      throw new Error('No se pudo resolver la version vigente de preferencias de consentimiento.');
+    }
+    return consentDocument.version;
+  };
+
+  const handleUpdateNotificationPreferences = async (next: {
+    allowActivityTracking: boolean;
+    allowOperationalNotifications: boolean;
+  }) => {
+    setNotificationPreferencesSaving(true);
+    try {
+      const consentPreferencesVersion = await resolveConsentPreferencesVersion();
+      const updatedPreferences = await backendApi.updateMyNotificationPreferences({
+        ...next,
+        consentPreferencesVersion,
+      });
+      setNotificationPreferences(updatedPreferences);
+      setNotification('Preferencias de notificaciones actualizadas.');
+      setTimeout(() => setNotification(null), 3500);
+    } catch (error) {
+      showAuthError(error, 'No se pudieron actualizar las preferencias de notificaciones.');
+    } finally {
+      setNotificationPreferencesSaving(false);
+    }
+  };
+
+  const handleRequestAccountDeletion = async (reason: string) => {
+    setAccountDeletionSaving(true);
+    try {
+      const nextRequest = await backendApi.requestMyAccountDeletion({
+        reason: reason.trim() || null,
+      });
+      setAccountDeletionRequest(nextRequest);
+      setNotification('Solicitud de eliminacion de cuenta registrada.');
+      setTimeout(() => setNotification(null), 4000);
+    } catch (error) {
+      showAuthError(error, 'No se pudo registrar la solicitud de eliminacion de cuenta.');
+    } finally {
+      setAccountDeletionSaving(false);
+    }
+  };
+
+  const resetPendingMatchInvite = (clearFromUrl: boolean = true) => {
+    setPendingMatchInviteToken(null);
+    setPendingMatchInvitePreview(null);
+    setPendingMatchInviteError(null);
+    setPendingMatchInviteLoading(false);
+    setJoiningMatchInvite(false);
+
+    if (clearFromUrl) {
+      clearMatchInviteTokenFromUrl();
+    }
+  };
+
+  const resetPendingTournamentInvite = (clearFromUrl: boolean = true) => {
+    setPendingTournamentInviteToken(null);
+    setPendingTournamentInvitePreview(null);
+    setPendingTournamentInviteError(null);
+    setPendingTournamentInviteLoading(false);
+    setJoiningTournamentInvite(false);
+
+    if (clearFromUrl) {
+      clearTournamentInviteTokenFromUrl();
+    }
+  };
+
+  const resolveMatchInvitePreview = async (token: string) => {
+    setPendingMatchInviteToken(token);
+    setPendingMatchInviteLoading(true);
+    setPendingMatchInviteError(null);
+
+    try {
+      const preview = await backendApi.resolveMatchInvite(token);
+      setPendingMatchInvitePreview(preview);
+    } catch (error) {
+      const message = error instanceof BackendApiError && error.message
+        ? error.message
+        : 'No se pudo resolver el link del partido.';
+      setPendingMatchInvitePreview(null);
+      setPendingMatchInviteError(message);
+    } finally {
+      setPendingMatchInviteLoading(false);
+    }
+  };
+
+  const resolveTournamentInvitePreview = async (token: string) => {
+    setPendingTournamentInviteToken(token);
+    setPendingTournamentInviteLoading(true);
+    setPendingTournamentInviteError(null);
+
+    try {
+      const preview = await backendApi.resolveTournamentInvite(token);
+      setPendingTournamentInvitePreview(preview);
+    } catch (error) {
+      const message = error instanceof BackendApiError && error.message
+        ? error.message
+        : 'No se pudo resolver el link del torneo.';
+      setPendingTournamentInvitePreview(null);
+      setPendingTournamentInviteError(message);
+    } finally {
+      setPendingTournamentInviteLoading(false);
+    }
+  };
+
+  const handleCopyGeneratedMatchInvite = async (inviteUrlOverride?: string) => {
+    const inviteUrl = inviteUrlOverride ?? generatedMatchInvite?.inviteUrl;
+    if (!inviteUrl) {
+      return;
+    }
+
+    await copyTextToClipboard(inviteUrl);
+    setGeneratedMatchInviteCopied(true);
+    setNotification('Link de invitacion copiado.');
+    setTimeout(() => setNotification(null), 3000);
+  };
+
+  const handleCopyGeneratedTournamentInvite = async (inviteUrlOverride?: string) => {
+    const inviteUrl = inviteUrlOverride ?? generatedTournamentInvite?.inviteUrl;
+    if (!inviteUrl) {
+      return;
+    }
+
+    await copyTextToClipboard(inviteUrl);
+    setGeneratedTournamentInviteCopied(true);
+    setNotification('Link de torneo copiado.');
+    setTimeout(() => setNotification(null), 3000);
+  };
+
+  const presentGeneratedMatchInvite = async (
+    inviteLink: MatchInviteLinkResponse,
+    autoCopy: boolean = false,
+  ) => {
+    setGeneratedMatchInvite(inviteLink);
+    setGeneratedMatchInviteCopied(false);
+    setGeneratedMatchInviteSharing(false);
+
+    if (!autoCopy) {
+      return;
+    }
+
+    try {
+      await handleCopyGeneratedMatchInvite(inviteLink.inviteUrl);
+    } catch (error) {
+      console.error(error);
+      setNotification('Link listo para compartir desde la app.');
+      setTimeout(() => setNotification(null), 3000);
+    }
+  };
+
+  const presentGeneratedTournamentInvite = async (
+    inviteLink: TournamentInviteLinkResponse,
+    autoCopy: boolean = false,
+  ) => {
+    setGeneratedTournamentInvite(inviteLink);
+    setGeneratedTournamentInviteCopied(false);
+    setGeneratedTournamentInviteSharing(false);
+
+    if (!autoCopy) {
+      return;
+    }
+
+    try {
+      await handleCopyGeneratedTournamentInvite(inviteLink.inviteUrl);
+    } catch (error) {
+      console.error(error);
+      setNotification('Link del torneo listo para compartir.');
+      setTimeout(() => setNotification(null), 3000);
+    }
+  };
+
+  const handleShareGeneratedMatchInvite = async () => {
+    if (!generatedMatchInvite?.inviteUrl || typeof navigator === 'undefined' || !navigator.share) {
+      return;
+    }
+
+    setGeneratedMatchInviteSharing(true);
+
+    try {
+      await navigator.share({
+        title: 'Sentimos Padel',
+        text: 'Te comparto este link para sumarte al partido.',
+        url: generatedMatchInvite.inviteUrl,
+      });
+    } catch (error) {
+      if (!(error instanceof DOMException) || error.name !== 'AbortError') {
+        showMatchError(error, 'No se pudo compartir el link desde este dispositivo.');
+      }
+    } finally {
+      setGeneratedMatchInviteSharing(false);
+    }
+  };
+
+  const handleShareGeneratedTournamentInvite = async () => {
+    if (!generatedTournamentInvite?.inviteUrl || typeof navigator === 'undefined' || !navigator.share) {
+      return;
+    }
+
+    setGeneratedTournamentInviteSharing(true);
+
+    try {
+      await navigator.share({
+        title: 'Sentimos Padel',
+        text: 'Te comparto este link para sumarte al torneo.',
+        url: generatedTournamentInvite.inviteUrl,
+      });
+    } catch (error) {
+      if (!(error instanceof DOMException) || error.name !== 'AbortError') {
+        showMatchError(error, 'No se pudo compartir el link del torneo desde este dispositivo.');
+      }
+    } finally {
+      setGeneratedTournamentInviteSharing(false);
+    }
+  };
+
+  const handleCreateMatchInviteLink = async (match: Match) => {
+    if (!match.backendMatchId) {
+      showMatchError(new Error('Invite link requires a backend match id.'), 'Este partido todavia no tiene link oficial para compartir.');
+      return;
+    }
+
+    setInviteLoadingMatchId(match.id);
+
+    try {
+      const inviteLink = await backendApi.createMatchInviteLink(match.backendMatchId);
+      await presentGeneratedMatchInvite(inviteLink, true);
+    } catch (error) {
+      showMatchError(error, 'No se pudo generar el link de invitacion.');
+    } finally {
+      setInviteLoadingMatchId(null);
+    }
+  };
+
+  const handleCreateTournamentInviteLink = async (tournament: any, autoCopy: boolean = true) => {
+    const backendTournamentId = getBackendTournamentId(tournament.id);
+    if (!backendTournamentId) {
+      showMatchError(new Error('Invite link requires a backend tournament id.'), 'Este torneo todavia no tiene link oficial para compartir.');
+      return;
+    }
+
+    setInviteLoadingTournamentId(tournament.id);
+
+    try {
+      const inviteLink = await backendApi.createTournamentInviteLink(backendTournamentId);
+      await presentGeneratedTournamentInvite(inviteLink, autoCopy);
+    } catch (error) {
+      showMatchError(error, 'No se pudo generar el link del torneo.');
+    } finally {
+      setInviteLoadingTournamentId(null);
+    }
   };
 
   const hydrateAuthenticatedUser = async (preferredName?: string | null) => {
@@ -6268,11 +5738,34 @@ export default function App() {
     return { authUser, playerProfile, onboarding, nextUser };
   };
 
+  const handleUpdateMyPlayerProfile = async (request: UpdatePlayerProfileRequest, photoFile: File | null) => {
+    setSavingPlayerProfile(true);
+
+    try {
+      await backendApi.updateMyPlayerProfile(request);
+      if (photoFile) {
+        await backendApi.uploadMyPlayerProfilePhoto(photoFile);
+      }
+      await hydrateAuthenticatedUser(request.fullName);
+      setShowEditPlayerProfile(false);
+      setNotification('Perfil actualizado.');
+      setTimeout(() => setNotification(null), 3000);
+    } catch (error) {
+      showMatchError(error, 'No se pudo actualizar el perfil.');
+    } finally {
+      setSavingPlayerProfile(false);
+    }
+  };
+
   const completeRegistration = async (data: {
     name: string;
     email: string;
     phone: string;
     password: string;
+    photoUrl?: string;
+    preferredSide?: 'LEFT' | 'RIGHT' | 'BOTH' | null;
+    city?: string;
+    representedClubId?: number | null;
     clubCity?: string;
     clubAddress?: string;
     acceptTerms: boolean;
@@ -6296,6 +5789,10 @@ export default function App() {
         clubName: authAccountMode === 'club' ? data.name : null,
         clubCity: authAccountMode === 'club' ? data.clubCity?.trim() || null : null,
         clubAddress: authAccountMode === 'club' ? data.clubAddress?.trim() || null : null,
+        photoUrl: authAccountMode === 'player' ? data.photoUrl?.trim() || null : null,
+        preferredSide: authAccountMode === 'player' ? data.preferredSide ?? null : null,
+        city: authAccountMode === 'player' ? data.city?.trim() || null : null,
+        representedClubId: authAccountMode === 'player' ? data.representedClubId ?? null : null,
         acceptTerms: data.acceptTerms,
         acceptedTermsVersion: data.acceptedTermsVersion,
         acceptPrivacyPolicy: data.acceptPrivacyPolicy,
@@ -6309,7 +5806,7 @@ export default function App() {
       setPendingVerificationEmail(data.email.trim());
       setAuthNotice({
         tone: 'success',
-        message: `Te enviamos un link de confirmación a ${data.email.trim()}. Confirmá tu correo y después iniciá sesión.`,
+        message: `Te enviamos un link de confirmacion a ${data.email.trim()}. Confirma tu correo y despues inicia sesion.`,
       });
       setIsRegistering(false);
     } catch (error) {
@@ -6347,10 +5844,168 @@ export default function App() {
         });
         return;
       }
-      showAuthError(error, 'No se pudo iniciar sesión.');
+      showAuthError(error, 'No se pudo iniciar sesion.');
     } finally {
       setAuthLoading(false);
       setSessionChecked(true);
+    }
+  };
+
+  const handleAcceptMatchInvite = async () => {
+    if (!pendingMatchInvitePreview) {
+      return;
+    }
+
+    if (currentUser.accountType === 'club') {
+      setNotification('Necesitas una cuenta de jugador para unirte desde este link.');
+      setTimeout(() => setNotification(null), 4000);
+      return;
+    }
+
+    if (pendingInviteAlreadyJoined) {
+      setCurrentTab('play');
+      resetPendingMatchInvite();
+      setNotification('Ya estabas dentro de este partido.');
+      setTimeout(() => setNotification(null), 3000);
+      return;
+    }
+
+    setJoiningMatchInvite(true);
+
+    try {
+      await backendApi.joinMatch(pendingMatchInvitePreview.matchId);
+      await refreshBackendMatches();
+      setCurrentTab('play');
+      resetPendingMatchInvite();
+      setNotification('Te uniste al partido desde el link.');
+      setTimeout(() => setNotification(null), 3000);
+    } catch (error) {
+      if (error instanceof BackendApiError && error.message.toLowerCase().includes('already part')) {
+        await refreshBackendMatches();
+        setCurrentTab('play');
+        resetPendingMatchInvite();
+        setNotification('Ya estabas dentro de este partido.');
+        setTimeout(() => setNotification(null), 3000);
+        return;
+      }
+
+      showMatchError(error, 'No se pudo unir al partido desde el link.');
+
+      if (pendingMatchInviteToken) {
+        void resolveMatchInvitePreview(pendingMatchInviteToken);
+      }
+    } finally {
+      setJoiningMatchInvite(false);
+    }
+  };
+
+  const handleAcceptTournamentInvite = async () => {
+    if (!pendingTournamentInvitePreview) {
+      return;
+    }
+
+    if (currentUser.accountType === 'club') {
+      setNotification('Necesitas una cuenta de jugador para unirte a este torneo.');
+      setTimeout(() => setNotification(null), 4000);
+      return;
+    }
+
+    if (pendingInviteTournament && !(pendingInviteTournament.format === 'americano' && pendingInviteTournament.americanoType === 'dinamico')) {
+      setCurrentTab('competition');
+      resetPendingTournamentInvite();
+      setTournamentToRegister(pendingInviteTournament);
+      return;
+    }
+
+    setJoiningTournamentInvite(true);
+
+    try {
+      await backendApi.joinTournament(pendingTournamentInvitePreview.tournamentId);
+      await refreshBackendTournaments();
+      setCurrentTab('competition');
+      resetPendingTournamentInvite();
+      setNotification('Ya quedaste inscripto en el torneo.');
+      setTimeout(() => setNotification(null), 3000);
+    } catch (error) {
+      if (error instanceof BackendApiError && error.message.toLowerCase().includes('already')) {
+        await refreshBackendTournaments();
+        setCurrentTab('competition');
+        resetPendingTournamentInvite();
+        setNotification('Ya estabas inscripto en este torneo.');
+        setTimeout(() => setNotification(null), 3000);
+        return;
+      }
+
+      showMatchError(error, 'No se pudo completar la inscripcion desde el link.');
+
+      if (pendingTournamentInviteToken) {
+        void resolveTournamentInvitePreview(pendingTournamentInviteToken);
+      }
+    } finally {
+      setJoiningTournamentInvite(false);
+    }
+  };
+
+  const handleSubmitTournamentRegistration = async (tournament: any, request: UpsertMyTournamentEntryRequest) => {
+    const backendTournamentId = getBackendTournamentId(tournament.id);
+    if (!backendTournamentId) {
+      return;
+    }
+
+    const alreadyRegistered = Array.isArray(tournament.teams)
+      && tournament.teams.some((team: any) =>
+        Array.isArray(team.players)
+        && team.players.some((player: User | null) => player?.id === currentUser.id),
+      );
+
+    setSubmittingTournamentRegistration(true);
+
+    try {
+      if (alreadyRegistered) {
+        await backendApi.updateMyTournamentEntry(backendTournamentId, request);
+      } else {
+        await backendApi.joinTournament(backendTournamentId, request);
+      }
+
+      await refreshBackendTournaments();
+      setTournamentToRegister(null);
+      setCurrentTab('competition');
+      const needsPartner = !(tournament.format === 'americano' && tournament.americanoType === 'dinamico')
+        && !request.secondaryPlayerProfileId;
+      setNotification(alreadyRegistered
+        ? 'Inscripcion actualizada.'
+        : needsPartner
+          ? 'Inscripcion guardada. Tu equipo queda pendiente hasta sumar companero.'
+          : 'Ya quedaste inscripto en el torneo.');
+      setTimeout(() => setNotification(null), 3000);
+    } catch (error) {
+      showMatchError(error, alreadyRegistered
+        ? 'No se pudo actualizar tu inscripcion al torneo.'
+        : 'No se pudo completar la inscripcion al torneo.');
+    } finally {
+      setSubmittingTournamentRegistration(false);
+    }
+  };
+
+  const handleUpdateMyTournamentTeamName = async (tournament: any, nextTeamName: string) => {
+    const backendTournamentId = getBackendTournamentId(tournament.id);
+    if (!backendTournamentId) {
+      return;
+    }
+
+    setSavingTournamentTeamName(true);
+
+    try {
+      await backendApi.updateMyTournamentEntryTeamName(backendTournamentId, {
+        teamName: nextTeamName.trim(),
+      });
+      await refreshBackendTournaments();
+      setNotification('Nombre de equipo actualizado.');
+      setTimeout(() => setNotification(null), 3000);
+    } catch (error) {
+      showMatchError(error, 'No se pudo actualizar el nombre del equipo.');
+    } finally {
+      setSavingTournamentTeamName(false);
     }
   };
 
@@ -6371,7 +6026,7 @@ export default function App() {
         message: response.message,
       });
     } catch (error) {
-      showAuthError(error, 'No se pudo reenviar el correo de confirmación.');
+      showAuthError(error, 'No se pudo reenviar el correo de confirmacion.');
     } finally {
       setAuthLoading(false);
     }
@@ -6397,6 +6052,9 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    void unregisterNativePushDevice().catch(error => {
+      console.error('No se pudo desregistrar el dispositivo de push notifications.', error);
+    });
     clearAccessToken();
     clearStoredDisplayName();
     setIsAuthenticated(false);
@@ -6420,9 +6078,56 @@ export default function App() {
     setMyMatchesByScope(EMPTY_SCOPED_MY_MATCHES);
     setPendingActions([]);
     setNotifications([]);
+    setNotificationPreferences(null);
+    setAccountDeletionRequest(null);
     setShowNotificationsInbox(false);
     setShowProfileMatchHistory(false);
+    resetPendingMatchInvite(false);
+    resetPendingTournamentInvite(false);
+    setGeneratedMatchInvite(null);
+    setGeneratedTournamentInvite(null);
   };
+
+  useEffect(() => {
+    const inviteToken = readMatchInviteTokenFromUrl();
+    if (!inviteToken) {
+      return;
+    }
+
+    void resolveMatchInvitePreview(inviteToken);
+  }, []);
+
+  useEffect(() => {
+    const inviteToken = readTournamentInviteTokenFromUrl();
+    if (!inviteToken) {
+      return;
+    }
+
+    void resolveTournamentInvitePreview(inviteToken);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const handleNativeUrl = () => {
+      const matchInviteToken = readMatchInviteTokenFromUrl();
+      if (matchInviteToken) {
+        void resolveMatchInvitePreview(matchInviteToken);
+      }
+
+      const tournamentInviteToken = readTournamentInviteTokenFromUrl();
+      if (tournamentInviteToken) {
+        void resolveTournamentInvitePreview(tournamentInviteToken);
+      }
+    };
+
+    window.addEventListener(MOBILE_URL_EVENT_NAME, handleNativeUrl as EventListener);
+    return () => {
+      window.removeEventListener(MOBILE_URL_EVENT_NAME, handleNativeUrl as EventListener);
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -6471,7 +6176,7 @@ export default function App() {
         await refreshBackendMatches(currentUser);
       } catch (error) {
         if (!cancelled) {
-          console.error(error);
+          showCriticalRefreshError(error, 'No se pudieron cargar los partidos oficiales.');
         }
       }
     };
@@ -6482,6 +6187,29 @@ export default function App() {
       cancelled = true;
     };
   }, [currentUser.backendUserId, currentUser.backendPlayerProfileId]);
+
+  useEffect(() => {
+    if (!hasStoredToken() || !currentUser.backendUserId) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+        return;
+      }
+
+      void refreshBackendTournaments(currentUser).catch(error =>
+        showCriticalRefreshError(error, 'No se pudieron actualizar los torneos oficiales.'),
+      );
+      if (currentUser.accountType !== 'club') {
+        void refreshInbox();
+      }
+    }, 20000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [currentUser.backendUserId, currentUser.backendPlayerProfileId, currentUser.accountType]);
 
   useEffect(() => {
     let cancelled = false;
@@ -6495,7 +6223,7 @@ export default function App() {
         await refreshRankingAndHistory(currentUser);
       } catch (error) {
         if (!cancelled) {
-          console.error(error);
+          showCriticalRefreshError(error, 'No se pudo cargar ranking e historial oficial.');
         }
       }
     };
@@ -6510,8 +6238,74 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
 
-    const loadTournaments = async () => {
+    const loadNotificationPreferences = async () => {
       if (!hasStoredToken() || !currentUser.backendUserId || currentUser.accountType === 'club') {
+        setNotificationPreferences(null);
+        return;
+      }
+
+      setNotificationPreferencesLoading(true);
+      try {
+        const nextPreferences = await backendApi.getMyNotificationPreferences();
+        if (!cancelled) {
+          setNotificationPreferences(nextPreferences);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error('No se pudieron cargar las preferencias de notificaciones.', error);
+        }
+      } finally {
+        if (!cancelled) {
+          setNotificationPreferencesLoading(false);
+        }
+      }
+    };
+
+    void loadNotificationPreferences();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser.backendUserId, currentUser.accountType]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadAccountDeletionRequest = async () => {
+      if (!hasStoredToken() || !currentUser.backendUserId || currentUser.accountType === 'club') {
+        setAccountDeletionRequest(null);
+        return;
+      }
+
+      setAccountDeletionLoading(true);
+      try {
+        const nextRequest = await backendApi.getMyAccountDeletionRequest();
+        if (!cancelled) {
+          setAccountDeletionRequest(nextRequest);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error('No se pudo cargar el estado de eliminacion de cuenta.', error);
+        }
+      } finally {
+        if (!cancelled) {
+          setAccountDeletionLoading(false);
+        }
+      }
+    };
+
+    void loadAccountDeletionRequest();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser.backendUserId, currentUser.accountType]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadTournaments = async () => {
+      if (!hasStoredToken() || !currentUser.backendUserId) {
         return;
       }
 
@@ -6519,7 +6313,7 @@ export default function App() {
         await refreshBackendTournaments(currentUser);
       } catch (error) {
         if (!cancelled) {
-          console.error(error);
+          showCriticalRefreshError(error, 'No se pudieron cargar los torneos oficiales.');
         }
       }
     };
@@ -6555,6 +6349,16 @@ export default function App() {
     };
   }, [currentUser.backendUserId, currentUser.backendPlayerProfileId]);
 
+  useEffect(() => {
+    if (!hasStoredToken() || !currentUser.backendUserId || currentUser.accountType === 'club') {
+      return;
+    }
+
+    void registerNativePushDevice().catch(error => {
+      console.error('No se pudo inicializar push notifications nativas.', error);
+    });
+  }, [currentUser.backendUserId, currentUser.accountType]);
+
   const rankingRows = useMemo(() => mapRankingRows(rankingEntries), [rankingEntries]);
   const currentUserRankingPosition = useMemo(
     () => findRankingPosition(rankingEntries, currentUser),
@@ -6567,7 +6371,9 @@ export default function App() {
   const competitionTournaments = useMemo(
     () => [
       ...leagueTournamentCatalog,
-      ...tournaments.filter(tournament => !tournament.isBackendTournament),
+      ...(ENABLE_LEGACY_LOCAL_FLOWS
+        ? tournaments.filter(tournament => !tournament.isBackendTournament)
+        : []),
     ],
     [leagueTournamentCatalog, tournaments],
   );
@@ -6582,6 +6388,18 @@ export default function App() {
   const unreadNotificationsCount = useMemo(
     () => getUnreadNotificationsCount(notifications),
     [notifications],
+  );
+  const pendingInviteMatch = useMemo(
+    () => pendingMatchInvitePreview
+      ? matches.find(match => match.backendMatchId === pendingMatchInvitePreview.matchId) ?? null
+      : null,
+    [matches, pendingMatchInvitePreview],
+  );
+  const pendingInviteTournament = useMemo(
+    () => pendingTournamentInvitePreview
+      ? tournaments.find(tournament => getBackendTournamentId(tournament.id) === pendingTournamentInvitePreview.tournamentId) ?? null
+      : null,
+    [tournaments, pendingTournamentInvitePreview],
   );
 
   const findActionableMatchForNotification = (notificationItem: NotificationResponse): Match | null => {
@@ -6600,6 +6418,33 @@ export default function App() {
     return null;
   };
 
+  const pendingInviteAlreadyJoined = Boolean(
+    pendingInviteMatch?.players.some(player => player?.id === currentUser.id),
+  );
+  const pendingInviteIsFull = Boolean(
+    pendingMatchInvitePreview
+    && (pendingMatchInvitePreview.status === 'FULL'
+      || pendingMatchInvitePreview.currentPlayerCount >= pendingMatchInvitePreview.maxPlayers),
+  );
+  const pendingInviteIsLocked = Boolean(
+    pendingMatchInvitePreview
+    && ['CANCELLED', 'COMPLETED', 'RESULT_PENDING', 'PENDING_CLUB_CONFIRMATION'].includes(pendingMatchInvitePreview.status),
+  );
+  const pendingTournamentInviteAlreadyJoined = Boolean(
+    pendingInviteTournament?.teams?.some((team: any) =>
+      Array.isArray(team.players) && team.players.some((player: User | null) => player?.id === currentUser.id),
+    ),
+  );
+  const pendingTournamentInviteIsFull = Boolean(
+    pendingTournamentInvitePreview
+    && pendingTournamentInvitePreview.maxEntries != null
+    && pendingTournamentInvitePreview.currentEntriesCount >= pendingTournamentInvitePreview.maxEntries,
+  );
+  const pendingTournamentInviteIsLocked = Boolean(
+    pendingTournamentInvitePreview
+    && (pendingTournamentInvitePreview.status !== 'OPEN' || !pendingTournamentInvitePreview.openEnrollment),
+  );
+
   if (!isAuthenticated) {
     if (!sessionChecked && !showOnboarding && !isRegistering) {
       return (
@@ -6614,7 +6459,7 @@ export default function App() {
               <Trophy size={32} className="text-dark-900" strokeWidth={2.5} />
             </div>
             <h1 className="text-3xl font-black text-white tracking-tight mb-3">Sentimos Padel</h1>
-            <p className="text-gray-400 text-sm">Cargando sesión...</p>
+            <p className="text-gray-400 text-sm">Cargando sesion...</p>
           </div>
         </div>
       );
@@ -6664,6 +6509,26 @@ export default function App() {
                     <p className="text-padel-400 text-sm font-bold tracking-widest uppercase">Uruguay</p>
                 </div>
                 <div className="bg-dark-800/60 backdrop-blur-xl border border-white/10 p-6 rounded-3xl shadow-2xl animate-fade-in-up">
+                        {(pendingMatchInviteToken || pendingMatchInviteLoading || pendingMatchInvitePreview || pendingMatchInviteError) && (
+                          <div className="mb-5">
+                            <MatchInvitePreviewPanel
+                              preview={pendingMatchInvitePreview}
+                              loading={pendingMatchInviteLoading}
+                              error={pendingMatchInviteError}
+                              actionHint="Ingresa con una cuenta de jugador para confirmar tu lugar desde este link."
+                            />
+                          </div>
+                        )}
+                        {(pendingTournamentInviteToken || pendingTournamentInviteLoading || pendingTournamentInvitePreview || pendingTournamentInviteError) && (
+                          <div className="mb-5">
+                            <TournamentInvitePreviewPanel
+                              preview={pendingTournamentInvitePreview}
+                              loading={pendingTournamentInviteLoading}
+                              error={pendingTournamentInviteError}
+                              actionHint="Ingresa con una cuenta de jugador para completar la inscripcion desde este link."
+                            />
+                          </div>
+                        )}
                         <form onSubmit={handleLoginSubmit} className="space-y-4">
                             <h2 className="text-xl font-bold text-white mb-2">Bienvenido</h2>
                             <div className="grid grid-cols-2 gap-2 bg-dark-900/50 border border-dark-700 rounded-2xl p-1">
@@ -6688,8 +6553,8 @@ export default function App() {
                             </div>
                             <p className="text-xs text-gray-400">
                               {authAccountMode === 'club'
-                                ? 'Ingresá con una cuenta administradora de club para ver solo la operación de tu sede.'
-                                : 'Ingresá con tu cuenta de jugador para ver partidos, ranking, torneos y perfil.'}
+                                ? 'Ingresa con una cuenta administradora de club para ver solo la operacion de tu sede.'
+                                : 'Ingresa con tu cuenta de jugador para ver partidos, ranking, torneos y perfil.'}
                             </p>
                             {authNotice && (
                               <div className={`rounded-2xl border px-4 py-3 text-sm leading-relaxed ${
@@ -6704,7 +6569,7 @@ export default function App() {
                                 <Users className="absolute left-3 top-3.5 text-gray-500 group-focus-within:text-padel-400 transition-colors" size={20} />
                                 <input
                                   type="email"
-                                  placeholder="Correo Electrónico"
+                                  placeholder="Correo Electronico"
                                   className="w-full bg-dark-900/50 border border-dark-600 text-white pl-10 pr-4 py-3 rounded-xl focus:outline-none focus:border-padel-500 transition-all"
                                   value={authEmail}
                                   onChange={(event) => setAuthEmail(event.target.value)}
@@ -6714,7 +6579,7 @@ export default function App() {
                                 <Lock className="absolute left-3 top-3.5 text-gray-500 group-focus-within:text-padel-400 transition-colors" size={20} />
                                 <input
                                   type="password"
-                                  placeholder="Contraseña"
+                                  placeholder="Contrasena"
                                   className="w-full bg-dark-900/50 border border-dark-600 text-white pl-10 pr-12 py-3 rounded-xl focus:outline-none focus:border-padel-500 transition-all"
                                   value={authPassword}
                                   onChange={(event) => setAuthPassword(event.target.value)}
@@ -6731,13 +6596,13 @@ export default function App() {
                                 }}
                                 className="w-full text-center text-sm text-padel-400 font-bold hover:text-padel-300 transition-colors"
                               >
-                                Reenviar correo de confirmación
+                                Reenviar correo de confirmacion
                               </button>
                             )}
                         </form>
                     <div className="mt-6 pt-6 border-t border-white/5 text-center">
                       <p className="text-sm text-gray-400">
-                        ¿No tienes cuenta? <button onClick={() => setIsRegistering(true)} className="text-white font-bold hover:underline">Regístrate gratis</button>
+                        No tienes cuenta? <button onClick={() => setIsRegistering(true)} className="text-white font-bold hover:underline">Registrate gratis</button>
                       </p>
                     </div>
                 </div>
@@ -6836,7 +6701,7 @@ export default function App() {
               const backendClubId = newMatch.backendClubId ?? getBackendClubId(newMatch.clubId);
               const locationParts = [newMatch.clubName, newMatch.courtName].filter(Boolean);
 
-              await backendApi.createMatch({
+              const createdMatch = await backendApi.createMatch({
                   scheduledAt: combineFrontendMatchDateTime(newMatch),
                   clubId: backendClubId,
                   locationText: locationParts.length > 0 ? locationParts.join(' - ') : newMatch.courtName,
@@ -6844,9 +6709,29 @@ export default function App() {
               });
 
               await refreshBackendMatches();
-              setNotification("Reserva confirmada con exito.");
+
+              if (createdMatch.status === 'PENDING_CLUB_CONFIRMATION') {
+                  setNotification("Solicitud enviada. Esperando confirmacion del club.");
+                  setTimeout(() => setNotification(null), 3000);
+                  setCurrentTab(currentUser.accountType === 'club' ? 'club_dashboard' : 'play');
+                  return;
+              }
+
+              let inviteLinkReady = true;
+
+              try {
+                  const inviteLink = await backendApi.createMatchInviteLink(createdMatch.id);
+                  await presentGeneratedMatchInvite(inviteLink, true);
+              } catch (error) {
+                  console.error(error);
+                  inviteLinkReady = false;
+              }
+
+              setNotification(inviteLinkReady
+                  ? "Reserva confirmada con exito."
+                  : "Reserva confirmada. El link de invitacion no se pudo generar.");
               setTimeout(() => setNotification(null), 3000);
-              setCurrentTab('play');
+              setCurrentTab(currentUser.accountType === 'club' ? 'club_dashboard' : 'play');
               return;
           } catch (error) {
               showMatchError(error, 'No se pudo crear el partido.');
@@ -6857,218 +6742,36 @@ export default function App() {
       setMatches(prev => [...prev, newMatch]);
       setNotification("¡Reserva confirmada con éxito!");
       setTimeout(() => setNotification(null), 3000);
-      setCurrentTab('play'); // Redirect to agenda
+      setCurrentTab(currentUser.accountType === 'club' ? 'club_dashboard' : 'play'); // Redirect to agenda
   };
 
   const handleLaunchTournament = async (config: any) => {
       if (!tournamentToLaunch) return;
 
       const backendTournamentId = getBackendTournamentId(tournamentToLaunch.id);
-      if (backendTournamentId && (
-          tournamentToLaunch.format === 'league'
-          || tournamentToLaunch.format === 'tournament'
-          || tournamentToLaunch.format === 'americano'
-      )) {
-          try {
-              await backendApi.launchTournament(backendTournamentId, {
-                  availableCourts: config.availableCourts ?? tournamentToLaunch.availableCourts ?? 1,
-                  numberOfGroups: tournamentToLaunch.format === 'league'
-                    ? 1
-                    : tournamentToLaunch.format === 'tournament'
-                        ? (config.numGroups ?? tournamentToLaunch.numberOfGroups ?? 1)
-                        : 1,
-                  leagueRounds: tournamentToLaunch.format === 'league' ? 2 : undefined,
-                  courtNames: (config.courtNames || tournamentToLaunch.courtNames || []).filter((courtName: string) => courtName?.trim()),
-              });
-              await refreshBackendTournaments();
-              setTournamentToLaunch(null);
-              setNotification("¡Torneo lanzado con éxito!");
-              setTimeout(() => setNotification(null), 3000);
-          } catch (error) {
-              showMatchError(error, 'No se pudo lanzar el torneo.');
-          }
+      if (!backendTournamentId) {
+          showMatchError(new Error('Tournament launch requires a backend tournament.'), 'Este launch MVP solo funciona con torneos backend-driven.');
           return;
       }
-      
-      // Find user's team name
-      let userTeamName = '';
-      if (tournamentToLaunch.teams) {
-          const userTeam = tournamentToLaunch.teams.find((t: any) => t.players.some((p: any) => p.id === currentUser.id));
-          if (userTeam) {
-              userTeamName = userTeam.teamName;
-          }
-      }
 
-      const newMatches: Match[] = [];
-      
-      if (tournamentToLaunch.format === 'americano' && config.americanoType === 'dinamico') {
-          // Dynamic Americano Match Generation
-          const players = tournamentToLaunch.teams?.flatMap((t: any) => t.players) || [];
-          const matchesPerParticipant = tournamentToLaunch.matchesPerParticipant || config.matchesPerParticipant || 3;
-          
-          if (players.length < 4) {
-              console.error("Not enough players for Americano Dinámico");
-              return;
-          }
-
-          const playerMatchCount = new Map<string, number>();
-          const partnerHistory = new Map<string, Set<string>>();
-          players.forEach((p: any) => {
-              playerMatchCount.set(p.id, 0);
-              partnerHistory.set(p.id, new Set());
+      try {
+          await backendApi.launchTournament(backendTournamentId, {
+              availableCourts: config.availableCourts ?? tournamentToLaunch.availableCourts ?? 1,
+              numberOfGroups: tournamentToLaunch.format === 'league'
+                  ? 1
+                  : tournamentToLaunch.format === 'tournament'
+                      ? (config.numGroups ?? tournamentToLaunch.numberOfGroups ?? 1)
+                      : 1,
+              leagueRounds: tournamentToLaunch.format === 'league' ? 2 : undefined,
+              courtNames: (config.courtNames || tournamentToLaunch.courtNames || []).filter((courtName: string) => courtName?.trim()),
           });
-
-          let matchIndex = 0;
-          while (Array.from(playerMatchCount.values()).some(count => count < matchesPerParticipant)) {
-              // Priority sorting:
-              // 1. Minimum matches played (those who still NEED matches)
-              // 2. Minimum partner variety
-              const sortedPlayers = [...players].sort((a, b) => {
-                  const countA = playerMatchCount.get(a.id) || 0;
-                  const countB = playerMatchCount.get(b.id) || 0;
-                  
-                  // Prioritize those who haven't reached the limit
-                  const needsA = countA < matchesPerParticipant;
-                  const needsB = countB < matchesPerParticipant;
-                  if (needsA !== needsB) return needsA ? -1 : 1;
-                  
-                  if (countA !== countB) return countA - countB;
-                  return (partnerHistory.get(a.id)?.size || 0) - (partnerHistory.get(b.id)?.size || 0);
-              });
-
-              const selectedForMatch: any[] = [];
-              
-              // Pick p1 (one who needs matches most)
-              const p1 = sortedPlayers[0];
-              selectedForMatch.push(p1);
-
-              // Find p2 (partner for p1)
-              // Prefer someone who needs matches AND hasn't partnered with p1
-              let p2 = sortedPlayers.slice(1).find(p => 
-                  (playerMatchCount.get(p.id) || 0) < matchesPerParticipant &&
-                  !partnerHistory.get(p1.id)?.has(p.id)
-              );
-              
-              // Fallback 1: Someone who needs matches (even if partnered before)
-              if (!p2) {
-                  p2 = sortedPlayers.slice(1).find(p => (playerMatchCount.get(p.id) || 0) < matchesPerParticipant);
-              }
-              
-              // Fallback 2: Filler (someone who already finished but is needed to complete the 4)
-              if (!p2) p2 = sortedPlayers[1];
-              selectedForMatch.push(p2);
-
-              // Find p3 and p4 (opponents)
-              const remaining = sortedPlayers.filter(p => !selectedForMatch.find(s => s.id === p.id));
-              
-              // Pick p3
-              const p3 = remaining[0];
-              selectedForMatch.push(p3);
-              
-              // Pick p4
-              let p4 = remaining.slice(1).find(p => 
-                  (playerMatchCount.get(p.id) || 0) < matchesPerParticipant &&
-                  !partnerHistory.get(p3.id)?.has(p.id)
-              );
-              
-              if (!p4) {
-                  p4 = remaining.slice(1).find(p => (playerMatchCount.get(p.id) || 0) < matchesPerParticipant);
-              }
-              
-              if (!p4) p4 = remaining[1];
-              selectedForMatch.push(p4);
-
-              // Update counts
-              selectedForMatch.forEach(p => playerMatchCount.set(p.id, (playerMatchCount.get(p.id) || 0) + 1));
-              
-              // Record partners
-              partnerHistory.get(p1.id)?.add(p2.id);
-              partnerHistory.get(p2.id)?.add(p1.id);
-              partnerHistory.get(p3.id)?.add(p4.id);
-              partnerHistory.get(p4.id)?.add(p3.id);
-
-              newMatches.push({
-                  id: `tm-dyn-${Date.now()}-${matchIndex}`,
-                  clubId: tournamentToLaunch.clubId || 'c1',
-                  courtName: tournamentToLaunch.courtNames?.[matchIndex % (tournamentToLaunch.availableCourts || 2)] || `Cancha ${1 + (matchIndex % (tournamentToLaunch.availableCourts || 2))}`,
-                  date: tournamentToLaunch.startDate || new Date().toISOString(),
-                  time: `${10 + Math.floor(matchIndex / 2)}:00`,
-                  duration: 30,
-                  type: MatchType.TOURNAMENT,
-                  pricePerPlayer: 0,
-                  currency: 'UYU',
-                  players: selectedForMatch,
-                  maxPlayers: 4,
-                  levelRange: [1, 7],
-                  isPrivate: true,
-                  status: 'awaiting_result',
-                  isTournamentMatch: true,
-                  isAmericano: true,
-                  isAmericanoDinamico: true,
-                  tournamentId: tournamentToLaunch.id,
-                  round: `Ronda ${Math.floor(matchIndex / (players.length / 4)) + 1}`,
-                  team1Name: `${selectedForMatch[0].name.split(' ')[0]} & ${selectedForMatch[1].name.split(' ')[0]}`,
-                  team2Name: `${selectedForMatch[2].name.split(' ')[0]} & ${selectedForMatch[3].name.split(' ')[0]}`,
-                  result: []
-              });
-              matchIndex++;
-          }
-      } else if (config.generatedData) {
-          const allMatches = [...(config.generatedData.groupMatches || []), ...(config.generatedData.playoffs || [])];
-          allMatches.forEach((m: any) => {
-              const team1Data = tournamentToLaunch.teams?.find((t: any) => t.teamName === m.team1);
-              const team2Data = tournamentToLaunch.teams?.find((t: any) => t.teamName === m.team2);
-              
-              const players = [
-                  team1Data?.players?.[0] || null,
-                  team1Data?.players?.[1] || null,
-                  team2Data?.players?.[0] || null,
-                  team2Data?.players?.[1] || null,
-              ];
-
-              newMatches.push({
-                  id: `tm-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-                  clubId: tournamentToLaunch.clubId || 'c1',
-                  courtName: m.courtNum ? (tournamentToLaunch.courtNames?.[m.courtNum - 1] || `Cancha ${m.courtNum}`) : `${tournamentToLaunch.name} - ${m.round || 'Torneo'}`,
-                  date: m.isoDate || new Date().toISOString(),
-                  time: m.time || 'A conf.',
-                  duration: 60,
-                  type: tournamentToLaunch.isCompetitive !== false ? MatchType.TOURNAMENT : MatchType.FRIENDLY,
-                  pricePerPlayer: 0,
-                  currency: 'UYU',
-                  players: players,
-                  maxPlayers: 4,
-                  levelRange: [1, 7],
-                  isPrivate: true,
-                  status: 'awaiting_result',
-                  isTournamentMatch: true,
-                  isAmericano: tournamentToLaunch.format === 'americano',
-                  tournamentId: tournamentToLaunch.id,
-                  round: m.round,
-                  team1Name: m.team1,
-                  team2Name: m.team2
-              });
-          });
+          await refreshBackendTournaments();
+          setTournamentToLaunch(null);
+          setNotification("Torneo lanzado con exito.");
+          setTimeout(() => setNotification(null), 3000);
+      } catch (error) {
+          showMatchError(error, 'No se pudo lanzar el torneo.');
       }
-
-      if (newMatches.length > 0) {
-          setMatches(prev => [...newMatches, ...prev]);
-      }
-
-      setTournaments(prev => prev.map(t => {
-          if (t.id === tournamentToLaunch.id) {
-              return {
-                  ...t,
-                  status: 'En curso',
-                  launchConfig: config
-              };
-          }
-          return t;
-      }));
-      
-      setTournamentToLaunch(null);
-      setNotification("¡Torneo lanzado con éxito!");
-      setTimeout(() => setNotification(null), 3000);
   };
 
   const handleUpdateTournament = async (updatedTournament: any) => {
@@ -7086,6 +6789,15 @@ export default function App() {
           } catch (error) {
               showMatchError(error, 'No se pudieron actualizar los equipos del torneo.');
           }
+          return;
+      }
+
+      if (!ENABLE_LEGACY_LOCAL_FLOWS) {
+          setTournamentToEdit(null);
+          showMatchError(
+              new Error('Legacy local tournament update blocked outside development.'),
+              'Este torneo local no se puede editar en este ambiente. Crea o edita torneos oficiales conectados al backend.',
+          );
           return;
       }
 
@@ -7156,14 +6868,33 @@ export default function App() {
           || tournamentData?.format === 'americano'
       )) {
           try {
-              await backendApi.createTournament(buildCreateBackendTournamentRequest(tournamentData));
+              const createdTournament = await backendApi.createTournament(buildCreateBackendTournamentRequest(tournamentData));
               await refreshBackendTournaments();
               setShowCreateTournament(false);
-              setNotification("¡Torneo creado con éxito!");
+              if (createdTournament.openEnrollment) {
+                  try {
+                      const inviteLink = await backendApi.createTournamentInviteLink(createdTournament.id);
+                      await presentGeneratedTournamentInvite(inviteLink, true);
+                  } catch (error) {
+                      console.error(error);
+                  }
+              }
+              setNotification(createdTournament.openEnrollment
+                  ? "Torneo creado. Link oficial listo para compartir."
+                  : "¡Torneo creado con éxito!");
               setTimeout(() => setNotification(null), 3000);
           } catch (error) {
               showMatchError(error, 'No se pudo crear el torneo.');
           }
+          return;
+      }
+
+      if (!ENABLE_LEGACY_LOCAL_FLOWS) {
+          setShowCreateTournament(false);
+          showMatchError(
+              new Error('Legacy local tournament creation blocked outside development.'),
+              'No se puede crear un torneo local en este ambiente. El torneo debe crearse conectado al backend.',
+          );
           return;
       }
 
@@ -7233,6 +6964,11 @@ export default function App() {
 	      const backendTournamentId = getBackendTournamentId(tournament.id);
 	      if (!backendTournamentId) return;
 
+	      if (!(tournament.format === 'americano' && tournament.americanoType === 'dinamico')) {
+	          setTournamentToRegister(tournament);
+	          return;
+	      }
+
 	      try {
 	          await backendApi.joinTournament(backendTournamentId);
 	          await refreshBackendTournaments();
@@ -7260,6 +6996,14 @@ export default function App() {
 	  const handleArchiveTournament = async (tournamentId: string) => {
 	      const backendTournamentId = getBackendTournamentId(tournamentId);
 	      if (!backendTournamentId) {
+	          if (!ENABLE_LEGACY_LOCAL_FLOWS) {
+	              showMatchError(
+	                  new Error('Legacy local tournament archive blocked outside development.'),
+	                  'Este torneo local no se puede archivar en este ambiente.',
+	              );
+	              return;
+	          }
+
 	          setTournaments(prev => prev.map(t => t.id === tournamentId ? { ...t, isArchived: true } : t));
 	          return;
 	      }
@@ -7282,7 +7026,7 @@ export default function App() {
           try {
               await backendApi.joinMatch(match.backendMatchId);
               await refreshBackendMatches();
-              setNotification("Â¡Te has unido al partido!");
+              setNotification("¡Te has unido al partido!");
               setTimeout(() => setNotification(null), 3000);
           } catch (error) {
               showMatchError(error, 'No se pudo unir al partido.');
@@ -7432,19 +7176,122 @@ export default function App() {
           return;
       }
 
-      if (notificationItem.status !== 'READ') {
+      const markAsReadIfNeeded = async () => {
+          if (notificationItem.status === 'READ') {
+              return;
+          }
+
           try {
               await backendApi.markNotificationRead(notificationItem.id);
               await refreshInbox();
           } catch (error) {
               console.error(error);
           }
+      };
+
+      if (notificationItem.tournamentId != null) {
+          const tournament = tournaments.find(
+              item => item.isBackendTournament && item.backendTournamentId === notificationItem.tournamentId,
+          );
+          await markAsReadIfNeeded();
+          setShowNotificationsInbox(false);
+
+          if (tournament) {
+              setSelectedTournamentStatus(tournament);
+              return;
+          }
       }
 
+      if (notificationItem.type === 'CLUB_VERIFICATION_APPROVED' || notificationItem.type === 'CLUB_VERIFICATION_REJECTED') {
+          await markAsReadIfNeeded();
+          setShowNotificationsInbox(false);
+          setShowPlayerClubVerification(true);
+          return;
+      }
+
+      if (notificationItem.type === 'CLUB_BOOKING_APPROVED' || notificationItem.type === 'CLUB_BOOKING_REJECTED') {
+          await markAsReadIfNeeded();
+          setShowNotificationsInbox(false);
+          setCurrentTab('play');
+          return;
+      }
+
+      await markAsReadIfNeeded();
       setShowNotificationsInbox(false);
-      setNotification('La acción asociada a esta notificación ya no está disponible.');
+      setNotification('Notificacion marcada como leida.');
       setTimeout(() => setNotification(null), 4000);
   };
+
+  useEffect(() => {
+      const parsePushId = (value: unknown): number | null => {
+          if (typeof value === 'number' && Number.isFinite(value)) {
+              return value;
+          }
+          if (typeof value === 'string' && value.trim() !== '') {
+              const parsed = Number(value);
+              return Number.isFinite(parsed) ? parsed : null;
+          }
+          return null;
+      };
+
+      const resultActionTypes = new Set([
+          'SUBMIT_MATCH_RESULT',
+          'CONFIRM_MATCH_RESULT',
+          'SUBMIT_TOURNAMENT_RESULT',
+          'CONFIRM_TOURNAMENT_RESULT',
+      ]);
+
+      const handlePushOpened = (event: Event) => {
+          const detail = event instanceof CustomEvent ? event.detail : null;
+          if (!detail || typeof detail !== 'object') {
+              return;
+          }
+
+          const data = detail as Record<string, unknown>;
+          const type = typeof data.type === 'string' ? data.type : null;
+          const matchId = parsePushId(data.matchId);
+          const tournamentId = parsePushId(data.tournamentId);
+          const tournamentMatchId = parsePushId(data.tournamentMatchId);
+
+          setShowNotificationsInbox(false);
+
+          if (type === 'CLUB_VERIFICATION_APPROVED' || type === 'CLUB_VERIFICATION_REJECTED') {
+              setShowPlayerClubVerification(true);
+              return;
+          }
+
+          const actionableMatch = matches.find(match => {
+              if (match.matchSource === 'backend' && match.backendMatchId === matchId) {
+                  return true;
+              }
+              return match.matchSource === 'backend-tournament' && match.backendMatchId === tournamentMatchId;
+          });
+
+          if (type && resultActionTypes.has(type) && actionableMatch) {
+              handleOpenResultInput(actionableMatch);
+              return;
+          }
+
+          if (tournamentId != null) {
+              const tournament = tournaments.find(
+                  item => item.isBackendTournament && item.backendTournamentId === tournamentId,
+              );
+              if (tournament) {
+                  setSelectedTournamentStatus(tournament);
+                  return;
+              }
+          }
+
+          if (matchId != null || type === 'CLUB_BOOKING_APPROVED' || type === 'CLUB_BOOKING_REJECTED') {
+              setCurrentTab('play');
+          }
+      };
+
+      window.addEventListener(PUSH_OPENED_EVENT_NAME, handlePushOpened);
+      return () => {
+          window.removeEventListener(PUSH_OPENED_EVENT_NAME, handlePushOpened);
+      };
+  }, [matches, tournaments]);
 
   const handleRejectResult = async (matchId: string) => {
       const match = matches.find(m => m.id === matchId);
@@ -7544,6 +7391,18 @@ export default function App() {
       if (!isUserInMatch && !isTournamentCreator) {
           setNotification("Solo puedes confirmar resultados de partidos en los que participaste o de torneos que organizas.");
           setTimeout(() => setNotification(null), 3000);
+          return;
+      }
+
+      if (!ENABLE_LEGACY_LOCAL_RATING) {
+          setMatches(prevMatches => prevMatches.map(m => {
+              if (m.id === matchId) {
+                  return { ...m, status: 'completed', result: finalResult };
+              }
+              return m;
+          }));
+          setNotification("Resultado confirmado localmente. El rating oficial solo se actualiza desde el backend.");
+          setTimeout(() => setNotification(null), 4000);
           return;
       }
 
@@ -7878,6 +7737,84 @@ export default function App() {
   };
 
 
+  const closeGeneratedMatchInvite = () => {
+      setGeneratedMatchInvite(null);
+      setGeneratedMatchInviteCopied(false);
+      setGeneratedMatchInviteSharing(false);
+  };
+
+  const closeGeneratedTournamentInvite = () => {
+      setGeneratedTournamentInvite(null);
+      setGeneratedTournamentInviteCopied(false);
+      setGeneratedTournamentInviteSharing(false);
+  };
+
+  let pendingInviteActionLabel: string | null = null;
+  let pendingInviteActionHint: string | null = null;
+  let pendingInviteActionDisabled = false;
+  let pendingInviteActionHandler: (() => void) | undefined;
+
+  if (pendingMatchInvitePreview) {
+      if (currentUser.accountType === 'club') {
+          pendingInviteActionHint = 'Este link se puede abrir desde la cuenta del club, pero para unirte necesitas una cuenta de jugador.';
+      } else if (pendingInviteAlreadyJoined) {
+          pendingInviteActionLabel = 'Ver en agenda';
+          pendingInviteActionHandler = () => {
+              setCurrentTab('play');
+              resetPendingMatchInvite();
+          };
+          pendingInviteActionHint = 'Ya estabas dentro del partido, asi que solo queda verlo desde tu agenda.';
+      } else if (pendingMatchInvitePreview.status === 'PENDING_CLUB_CONFIRMATION') {
+          pendingInviteActionHint = 'Este partido sigue pendiente de aprobacion del club. El link se va a poder usar una vez que la reserva quede aprobada.';
+      } else if (pendingInviteIsLocked) {
+          pendingInviteActionHint = 'Este partido ya no admite nuevos jugadores desde el link.';
+      } else if (pendingInviteIsFull) {
+          pendingInviteActionHint = 'Este partido ya esta completo.';
+      } else {
+          pendingInviteActionLabel = 'Unirme al partido';
+          pendingInviteActionHandler = () => {
+              void handleAcceptMatchInvite();
+          };
+          pendingInviteActionDisabled = joiningMatchInvite;
+      }
+  }
+
+  let pendingTournamentInviteActionLabel: string | null = null;
+  let pendingTournamentInviteActionHint: string | null = null;
+  let pendingTournamentInviteActionDisabled = false;
+  let pendingTournamentInviteActionHandler: (() => void) | undefined;
+
+  if (pendingTournamentInvitePreview) {
+      if (currentUser.accountType === 'club') {
+          pendingTournamentInviteActionHint = 'Este link se puede abrir desde la cuenta del club, pero para inscribirte necesitas una cuenta de jugador.';
+      } else if (pendingTournamentInviteAlreadyJoined) {
+          const pendingEntryNeedsCompletion = pendingInviteTournament?.currentUserEntryStatus === 'PENDING';
+          pendingTournamentInviteActionLabel = pendingEntryNeedsCompletion ? 'Completar equipo' : 'Ver torneo';
+          pendingTournamentInviteActionHandler = () => {
+              if (pendingInviteTournament && pendingEntryNeedsCompletion) {
+                  setTournamentToRegister(pendingInviteTournament);
+              } else if (pendingInviteTournament) {
+                  setSelectedTournamentStatus(pendingInviteTournament);
+              }
+              setCurrentTab('competition');
+              resetPendingTournamentInvite();
+          };
+          pendingTournamentInviteActionHint = pendingEntryNeedsCompletion
+              ? 'Ya estabas dentro del torneo, pero tu equipo sigue pendiente.'
+              : 'Ya estabas dentro del torneo.';
+      } else if (pendingTournamentInviteIsLocked) {
+          pendingTournamentInviteActionHint = 'Este torneo ya no admite nuevas inscripciones desde el link.';
+      } else if (pendingTournamentInviteIsFull) {
+          pendingTournamentInviteActionHint = 'Este torneo ya completo todos sus cupos.';
+      } else {
+          pendingTournamentInviteActionLabel = 'Inscribirme al torneo';
+          pendingTournamentInviteActionHandler = () => {
+              void handleAcceptTournamentInvite();
+          };
+          pendingTournamentInviteActionDisabled = joiningTournamentInvite;
+      }
+  }
+
   return (
     <div className="min-h-screen bg-dark-900 font-sans text-gray-100 selection:bg-padel-500 selection:text-dark-900 relative">
       <main className="max-w-md mx-auto min-h-screen bg-dark-900 shadow-2xl relative overflow-hidden">
@@ -7892,6 +7829,194 @@ export default function App() {
                         <CheckCircle size={16} className="text-dark-900" />
                      </div>
                      <span className="text-sm font-medium">{notification}</span>
+                 </div>
+             </div>
+         )}
+
+         {generatedMatchInvite && (
+             <div className="absolute inset-0 z-[115] flex items-end justify-center bg-dark-900/80 p-4 backdrop-blur-sm sm:items-center">
+                 <div className="w-full max-w-md rounded-3xl border border-dark-700 bg-dark-800 p-5 shadow-2xl">
+                     <div className="flex items-start justify-between gap-4">
+                         <div>
+                             <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-padel-400">Link listo</p>
+                             <h3 className="mt-2 text-xl font-bold text-white">Invita a un amigo por link</h3>
+                             <p className="mt-2 text-sm leading-relaxed text-gray-400">
+                                 Comparte este link por WhatsApp o por el canal que quieras. El backend valida el estado real del partido cuando la otra persona abre el link.
+                             </p>
+                         </div>
+                         <button
+                             type="button"
+                             onClick={closeGeneratedMatchInvite}
+                             className="rounded-full border border-dark-600 bg-dark-900/70 p-2 text-gray-400 transition-colors hover:text-white"
+                             aria-label="Cerrar link de invitacion"
+                         >
+                             <X size={16} />
+                         </button>
+                     </div>
+
+                     <div className="mt-4 rounded-2xl border border-dark-700 bg-dark-900/60 p-3">
+                         <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500">URL oficial</p>
+                         <p className="mt-2 break-all text-sm text-gray-200">{generatedMatchInvite.inviteUrl}</p>
+                     </div>
+
+                     <p className="mt-3 text-xs text-gray-500">
+                         Expira: {new Date(generatedMatchInvite.expiresAt).toLocaleString('es-UY')}
+                     </p>
+
+                     <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                         <Button
+                             type="button"
+                             onClick={() => {
+                                 void handleCopyGeneratedMatchInvite();
+                             }}
+                             className="font-bold"
+                         >
+                             {generatedMatchInviteCopied ? 'Copiado' : 'Copiar link'}
+                         </Button>
+                         {typeof navigator !== 'undefined' && navigator.share ? (
+                             <Button
+                                 type="button"
+                                 variant="secondary"
+                                 onClick={() => {
+                                     void handleShareGeneratedMatchInvite();
+                                 }}
+                                 disabled={generatedMatchInviteSharing}
+                                 className="font-bold"
+                             >
+                                 {generatedMatchInviteSharing ? 'Compartiendo...' : 'Compartir'}
+                             </Button>
+                         ) : (
+                             <Button
+                                 type="button"
+                                 variant="secondary"
+                                 onClick={closeGeneratedMatchInvite}
+                                 className="font-bold"
+                             >
+                                 Cerrar
+                             </Button>
+                         )}
+                     </div>
+                 </div>
+             </div>
+         )}
+
+         {generatedTournamentInvite && (
+             <div className="absolute inset-0 z-[115] flex items-end justify-center bg-dark-900/80 p-4 backdrop-blur-sm sm:items-center">
+                 <div className="w-full max-w-md rounded-3xl border border-dark-700 bg-dark-800 p-5 shadow-2xl">
+                     <div className="flex items-start justify-between gap-4">
+                         <div>
+                             <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-padel-400">Link listo</p>
+                             <h3 className="mt-2 text-xl font-bold text-white">Invita jugadores al torneo</h3>
+                             <p className="mt-2 text-sm leading-relaxed text-gray-400">
+                                 Comparte este link para inscripcion abierta. El backend valida el estado real del torneo cuando la otra persona lo abre.
+                             </p>
+                         </div>
+                         <button
+                             type="button"
+                             onClick={closeGeneratedTournamentInvite}
+                             className="rounded-full border border-dark-600 bg-dark-900/70 p-2 text-gray-400 transition-colors hover:text-white"
+                             aria-label="Cerrar link de invitacion del torneo"
+                         >
+                             <X size={16} />
+                         </button>
+                     </div>
+
+                     <div className="mt-4 rounded-2xl border border-dark-700 bg-dark-900/60 p-3">
+                         <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500">URL oficial</p>
+                         <p className="mt-2 break-all text-sm text-gray-200">{generatedTournamentInvite.inviteUrl}</p>
+                     </div>
+
+                     <p className="mt-3 text-xs text-gray-500">
+                         Expira: {new Date(generatedTournamentInvite.expiresAt).toLocaleString('es-UY')}
+                     </p>
+
+                     <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                         <Button
+                             type="button"
+                             onClick={() => {
+                                 void handleCopyGeneratedTournamentInvite();
+                             }}
+                             className="font-bold"
+                         >
+                             {generatedTournamentInviteCopied ? 'Copiado' : 'Copiar link'}
+                         </Button>
+                         {typeof navigator !== 'undefined' && navigator.share ? (
+                             <Button
+                                 type="button"
+                                 variant="secondary"
+                                 onClick={() => {
+                                     void handleShareGeneratedTournamentInvite();
+                                 }}
+                                 disabled={generatedTournamentInviteSharing}
+                                 className="font-bold"
+                             >
+                                 {generatedTournamentInviteSharing ? 'Compartiendo...' : 'Compartir'}
+                             </Button>
+                         ) : (
+                             <Button
+                                 type="button"
+                                 variant="secondary"
+                                 onClick={closeGeneratedTournamentInvite}
+                                 className="font-bold"
+                             >
+                                 Cerrar
+                             </Button>
+                         )}
+                     </div>
+                 </div>
+             </div>
+         )}
+
+         {isAuthenticated && (pendingMatchInviteToken || pendingMatchInviteLoading || pendingMatchInvitePreview || pendingMatchInviteError) && (
+             <div className="absolute inset-0 z-[114] flex items-end justify-center bg-dark-900/80 p-4 backdrop-blur-sm sm:items-center">
+                 <div className="w-full max-w-md">
+                     <div className="mb-3 flex justify-end">
+                         <button
+                             type="button"
+                             onClick={() => resetPendingMatchInvite()}
+                             className="rounded-full border border-dark-600 bg-dark-900/80 p-2 text-gray-400 transition-colors hover:text-white"
+                             aria-label="Cerrar invitacion"
+                         >
+                             <X size={16} />
+                         </button>
+                     </div>
+                     <MatchInvitePreviewPanel
+                         preview={pendingMatchInvitePreview}
+                         loading={pendingMatchInviteLoading}
+                         error={pendingMatchInviteError}
+                         actionLabel={pendingInviteActionLabel}
+                         actionDisabled={pendingInviteActionDisabled}
+                         actionLoading={joiningMatchInvite}
+                         actionHint={pendingInviteActionHint}
+                         onAction={pendingInviteActionHandler}
+                     />
+                 </div>
+             </div>
+         )}
+
+         {isAuthenticated && (pendingTournamentInviteToken || pendingTournamentInviteLoading || pendingTournamentInvitePreview || pendingTournamentInviteError) && (
+             <div className="absolute inset-0 z-[114] flex items-end justify-center bg-dark-900/80 p-4 backdrop-blur-sm sm:items-center">
+                 <div className="w-full max-w-md">
+                     <div className="mb-3 flex justify-end">
+                         <button
+                             type="button"
+                             onClick={() => resetPendingTournamentInvite()}
+                             className="rounded-full border border-dark-600 bg-dark-900/80 p-2 text-gray-400 transition-colors hover:text-white"
+                             aria-label="Cerrar invitacion"
+                         >
+                             <X size={16} />
+                         </button>
+                     </div>
+                     <TournamentInvitePreviewPanel
+                         preview={pendingTournamentInvitePreview}
+                         loading={pendingTournamentInviteLoading}
+                         error={pendingTournamentInviteError}
+                         actionLabel={pendingTournamentInviteActionLabel}
+                         actionDisabled={pendingTournamentInviteActionDisabled}
+                         actionLoading={joiningTournamentInvite}
+                         actionHint={pendingTournamentInviteActionHint}
+                         onAction={pendingTournamentInviteActionHandler}
+                     />
                  </div>
              </div>
          )}
@@ -7922,7 +8047,7 @@ export default function App() {
          {showClubCourts && <ClubCourtsView onClose={() => setShowClubCourts(false)} />}
          {showTopPartners && <TopPartnersView currentUser={currentUser} partners={topPartnersInsights} onClose={() => setShowTopPartners(false)} />}
          {showTopRivals && <TopRivalsView rivals={topRivalsInsights} onClose={() => setShowTopRivals(false)} />}
-         {showCreateTournament && <CreateTournamentView currentUser={currentUser} selectablePlayers={tournamentSelectablePlayers} clubOptions={tournamentClubOptions.length > 0 ? tournamentClubOptions : undefined} onClose={() => setShowCreateTournament(false)} onCreate={(data) => handleCreateTournament(data)} />}
+         {showCreateTournament && <CreateTournamentView currentUser={currentUser} selectablePlayers={tournamentSelectablePlayers} clubOptions={tournamentClubOptions.length > 0 ? tournamentClubOptions : undefined} defaultClubId={currentUser.accountType === 'club' && currentUser.managedClubId != null ? `backend-club-${currentUser.managedClubId}` : undefined} onClose={() => setShowCreateTournament(false)} onCreate={(data) => handleCreateTournament(data)} />}
          {tournamentToEdit && <AddTeamsToTournamentView currentUser={currentUser} availablePlayers={tournamentSelectablePlayers} tournament={tournamentToEdit} onClose={() => setTournamentToEdit(null)} onUpdate={handleUpdateTournament} />}
          {postMatchResult && (
              <PostMatchView 
@@ -7933,7 +8058,7 @@ export default function App() {
              />
          )}
 
-        {currentTab === 'play' && <PlayView currentUser={currentUser} rankingPosition={currentUserRankingPosition} myMatchesByScope={myMatchesByScope} pendingResultMatches={pendingResultActionableMatches} pendingResultMatchesById={pendingResultActionableMatchesById} notifications={notifications} unreadNotificationsCount={unreadNotificationsCount} navigateTo={setCurrentTab} onOpenCoaches={() => setShowCoaches(true)} onOpenNotifications={() => setShowNotificationsInbox(true)} agenda={agenda} clubs={clubCatalog ?? undefined} matches={matches} tournaments={tournaments} onJoin={handleJoinMatch} onRequest={handleRequestAccess} onLeaveMatch={handleLeaveMatch} onCancelMatch={handleCancelMatch} onSubmitResult={handleSubmitResult} onConfirmResult={handleConfirmResult} onRejectResult={handleRejectResult} onUserClick={setSelectedPublicUser} onLaunchTournament={setTournamentToLaunch} onOpenTournamentStatus={setSelectedTournamentStatus} onAddTeamsToTournament={setTournamentToEdit} onAddResult={handleOpenResultInput} onArchiveTournament={handleArchiveTournament} />}
+        {currentTab === 'play' && <PlayView currentUser={currentUser} rankingPosition={currentUserRankingPosition} myMatchesByScope={myMatchesByScope} pendingResultMatches={pendingResultActionableMatches} pendingResultMatchesById={pendingResultActionableMatchesById} notifications={notifications} unreadNotificationsCount={unreadNotificationsCount} navigateTo={setCurrentTab} onOpenCoaches={() => setShowCoaches(true)} onOpenNotifications={() => setShowNotificationsInbox(true)} agenda={agenda} clubs={clubCatalog ?? undefined} matches={matches} tournaments={tournaments} onJoin={handleJoinMatch} onRequest={handleRequestAccess} onLeaveMatch={handleLeaveMatch} onCancelMatch={handleCancelMatch} onInviteMatch={handleCreateMatchInviteLink} inviteLoadingMatchId={inviteLoadingMatchId} onSubmitResult={handleSubmitResult} onConfirmResult={handleConfirmResult} onRejectResult={handleRejectResult} onUserClick={setSelectedPublicUser} onLaunchTournament={setTournamentToLaunch} onOpenTournamentStatus={setSelectedTournamentStatus} onAddTeamsToTournament={setTournamentToEdit} onAddResult={handleOpenResultInput} onArchiveTournament={handleArchiveTournament} />}
         {currentTab === 'matches' && <MatchesView currentUser={currentUser} clubs={clubCatalog ?? undefined} matches={matches} onJoin={handleJoinMatch} onRequest={handleRequestAccess} onLeaveMatch={handleLeaveMatch} onCancelMatch={handleCancelMatch} onUserClick={setSelectedPublicUser} />}
         {currentTab === 'competition' && (
             <CompetitionView
@@ -7947,6 +8072,8 @@ export default function App() {
         )}
         {currentTab === 'club_dashboard' && (
           <ClubDashboardBackendView
+            onCreateMatch={() => setCurrentTab('clubs')}
+            onCreateTournament={() => setShowCreateTournament(true)}
             onOpenClubUsers={() => setShowClubUsers(true)}
             onOpenClubAgenda={() => setShowClubAgenda(true)}
             onOpenClubCourts={() => setShowClubCourts(true)}
@@ -7954,10 +8081,10 @@ export default function App() {
             onLogout={handleLogout}
           />
         )}
-        {currentTab === 'clubs' && <ClubsBookingView currentUser={currentUser} clubs={clubCatalog ?? undefined} onBook={handleBookMatch} />}
-        {currentTab === 'profile' && <ProfileView currentUser={currentUser} rankingPosition={currentUserRankingPosition} ratingHistory={ratingHistoryView} topPartners={topPartnersInsights} topRivals={topRivalsInsights} clubRankings={clubRankingSummaries} matches={matches} onOpenClubRankings={() => setShowClubRankings(true)} onOpenTopPartners={() => setShowTopPartners(true)} onOpenTopRivals={() => setShowTopRivals(true)} onUserClick={setSelectedPublicUser} onOpenNationalRanking={() => setShowNationalRanking(true)} onOpenMatchHistory={() => setShowProfileMatchHistory(true)} onOpenPlayerClubVerification={() => setShowPlayerClubVerification(true)} />}
+        {currentTab === 'clubs' && <ClubsBookingView currentUser={currentUser} clubs={clubCatalog ?? undefined} onBook={handleBookMatch} onBack={currentUser.accountType === 'club' ? () => setCurrentTab('club_dashboard') : undefined} preferredClubId={currentUser.accountType === 'club' && currentUser.managedClubId != null ? `backend-club-${currentUser.managedClubId}` : undefined} title={currentUser.accountType === 'club' ? 'Crear partido' : 'Reservas'} />}
+        {currentTab === 'profile' && <ProfileView currentUser={currentUser} rankingPosition={currentUserRankingPosition} ratingHistory={ratingHistoryView} topPartners={topPartnersInsights} topRivals={topRivalsInsights} clubRankings={clubRankingSummaries} matches={matches} onOpenClubRankings={() => setShowClubRankings(true)} onOpenTopPartners={() => setShowTopPartners(true)} onOpenTopRivals={() => setShowTopRivals(true)} onUserClick={setSelectedPublicUser} onOpenNationalRanking={() => setShowNationalRanking(true)} onOpenMatchHistory={() => setShowProfileMatchHistory(true)} onOpenPlayerClubVerification={() => setShowPlayerClubVerification(true)} onOpenEditProfile={() => setShowEditPlayerProfile(true)} notificationPreferences={notificationPreferences} notificationPreferencesLoading={notificationPreferencesLoading} notificationPreferencesSaving={notificationPreferencesSaving} onUpdateNotificationPreferences={handleUpdateNotificationPreferences} accountDeletionRequest={accountDeletionRequest} accountDeletionLoading={accountDeletionLoading} accountDeletionSaving={accountDeletionSaving} onRequestAccountDeletion={handleRequestAccountDeletion} />}
 
-        {tournamentToLaunch && <LaunchTournamentView tournament={tournamentToLaunch} matches={matches} onClose={() => setTournamentToLaunch(null)} onLaunch={handleLaunchTournament} />}
+        {tournamentToLaunch && <LaunchTournamentView tournament={tournamentToLaunch} onClose={() => setTournamentToLaunch(null)} onLaunch={handleLaunchTournament} />}
         {selectedTournamentStatus && (
             <TournamentStatusView 
                 tournament={tournaments.find(t => t.id === selectedTournamentStatus.id) || selectedTournamentStatus} 
@@ -7967,6 +8094,29 @@ export default function App() {
                 onAddResult={handleOpenResultInput} 
                 onUserClick={setSelectedPublicUser}
                 pendingResultMatchesById={pendingResultActionableMatchesById}
+                onCreateInviteLink={(tournament) => {
+                    void handleCreateTournamentInviteLink(tournament);
+                }}
+                tournamentInviteLoading={inviteLoadingTournamentId === selectedTournamentStatus.id}
+                onUpdateMyTeamName={(tournament, nextTeamName) => {
+                    void handleUpdateMyTournamentTeamName(tournament, nextTeamName);
+                }}
+                onCompleteMyRegistration={(tournament) => {
+                    setTournamentToRegister(tournament);
+                }}
+                savingTeamName={savingTournamentTeamName}
+            />
+        )}
+        {tournamentToRegister && (
+            <TournamentRegistrationView
+                currentUser={currentUser}
+                tournament={tournaments.find(tournament => tournament.id === tournamentToRegister.id) || tournamentToRegister}
+                availablePlayers={tournamentSelectablePlayers}
+                submitting={submittingTournamentRegistration}
+                onClose={() => setTournamentToRegister(null)}
+                onSubmit={(request) => {
+                    void handleSubmitTournamentRegistration(tournamentToRegister, request);
+                }}
             />
         )}
         
@@ -7991,6 +8141,16 @@ export default function App() {
                 onAddResult={handleOpenResultInput}
                 onLeaveMatch={handleLeaveMatch}
                 onCancelMatch={handleCancelMatch}
+            />
+        )}
+
+        {showEditPlayerProfile && currentUser.accountType === 'player' && (
+            <PlayerProfileEditView
+                currentUser={currentUser}
+                clubs={clubCatalog ?? undefined}
+                saving={savingPlayerProfile}
+                onClose={() => setShowEditPlayerProfile(false)}
+                onSave={handleUpdateMyPlayerProfile}
             />
         )}
 
@@ -8033,5 +8193,6 @@ export default function App() {
     </div>
   );
 }
+
 
 

@@ -1,3 +1,5 @@
+import type { PendingActionType } from './services/backendApi';
+
 // Enums for rigid structure
 export enum MatchType {
   FRIENDLY = 'Recreativo',
@@ -26,6 +28,12 @@ export interface User {
   managedClubName?: string | null;
   name: string;
   avatar: string; // URL
+  photoUrl?: string | null;
+  preferredSide?: 'LEFT' | 'RIGHT' | 'BOTH' | null;
+  city?: string | null;
+  representedClubId?: number | null;
+  representedClubName?: string | null;
+  bio?: string | null;
   level: number; // 1.0 to 7.0
   hasOfficialRating?: boolean;
   categoryNumber?: number;
@@ -36,6 +44,7 @@ export interface User {
   publicCategoryNumber?: number | null;
   matchesPlayed: number;
   reputation: number; // 0 to 100%
+  location?: string;
   clubAffiliation?: string; // ID of primary club
   isPremium: boolean; // Subscription status
   badges?: string[]; // Array of badge names or descriptions
@@ -50,6 +59,7 @@ export interface Club {
   courtsAvailable: number;
   isPremium: boolean;
   isIntegrated?: boolean;
+  bookingMode?: 'DIRECT' | 'CONFIRMATION_REQUIRED' | 'UNAVAILABLE';
 }
 
 export interface Match {
@@ -71,7 +81,7 @@ export interface Match {
   status: 'open' | 'confirmed' | 'pending_approval' | 'completed' | 'awaiting_result' | 'awaiting_validation' | 'cancelled';
   matchSource?: 'backend' | 'backend-tournament' | 'local';
   backendMatchId?: number;
-  backendStatus?: 'OPEN' | 'FULL' | 'CANCELLED' | 'RESULT_PENDING' | 'COMPLETED' | 'SCHEDULED';
+  backendStatus?: 'OPEN' | 'FULL' | 'PENDING_CLUB_CONFIRMATION' | 'CANCELLED' | 'RESULT_PENDING' | 'COMPLETED' | 'SCHEDULED';
   backendResultStatus?: 'PENDING' | 'CONFIRMED' | 'REJECTED' | null;
   createdByPlayerProfileId?: number;
   locationText?: string | null;
@@ -80,11 +90,7 @@ export interface Match {
   authenticatedPlayerWon?: boolean | null;
   teamsAssigned?: boolean;
   pendingNotificationId?: number;
-  pendingActionType?:
-    | 'SUBMIT_MATCH_RESULT'
-    | 'CONFIRM_MATCH_RESULT'
-    | 'SUBMIT_TOURNAMENT_RESULT'
-    | 'CONFIRM_TOURNAMENT_RESULT';
+  pendingActionType?: PendingActionType;
   pendingPlayerIds?: string[]; // IDs of users requesting to join
   rejectedPlayerIds?: string[]; // IDs of users rejected by the lobby
   approvedGuestIds?: string[]; // IDs of users who requested and were approved, ready to join

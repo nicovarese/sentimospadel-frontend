@@ -26,6 +26,11 @@ const getGeminiClient = (): GoogleGenAI | null => {
 const matchFitFallback = "El asistente de IA no está configurado en este entorno.";
 const tacticalTipFallback = "Visualiza tu próximo golpe.";
 
+const formatPlayerLevelForPrompt = (player: User): string =>
+  player.hasOfficialRating === false
+    ? 'Rating oficial no informado'
+    : `Level: ${player.level}`;
+
 // Analyze if a match is good for the player based on ELO/Level/Reputation
 export const analyzeMatchFit = async (user: User, match: Match, otherPlayers: User[]): Promise<string> => {
   const ai = getGeminiClient();
@@ -47,7 +52,7 @@ export const analyzeMatchFit = async (user: User, match: Match, otherPlayers: Us
     Level Range: ${match.levelRange[0]} - ${match.levelRange[1]}
     
     Current Players in Match:
-    ${otherPlayers.map(p => `- ${p.name} (Level: ${p.level})`).join('\n')}
+    ${otherPlayers.map(p => `- ${p.name} (${formatPlayerLevelForPrompt(p)})`).join('\n')}
     
     Task:
     Provide a concise (max 2 sentences) analysis of whether this user should join this match. 
