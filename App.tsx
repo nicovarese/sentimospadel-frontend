@@ -22,11 +22,12 @@ import { TournamentInvitePreviewPanel } from './components/TournamentInvitePrevi
 import { TournamentRegistrationView } from './components/TournamentRegistrationView';
 import { computeMatchRatingUpdatesElo, EloMatchInput } from './utils/eloCalculator';
 import {
-    ACCESS_TOKEN_STORAGE_KEY,
     backendApi,
     BackendApiError,
     clearAccessToken,
+    getStoredAccessToken,
     getStoredRefreshToken,
+    initAuthTokenStorage,
     storeAuthTokens,
     type AccountDeletionResponse,
     type MatchInviteLinkResponse,
@@ -5114,11 +5115,7 @@ export default function App() {
   const [submittingTournamentRegistration, setSubmittingTournamentRegistration] = useState(false);
 
   const hasStoredToken = () => {
-    if (typeof window === 'undefined') {
-      return false;
-    }
-
-    return Boolean(window.localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY));
+    return Boolean(getStoredAccessToken());
   };
 
   const copyTextToClipboard = async (value: string) => {
@@ -6140,6 +6137,8 @@ export default function App() {
     let cancelled = false;
 
     const bootstrapSession = async () => {
+      await initAuthTokenStorage();
+
       if (!hasStoredToken()) {
         setSessionChecked(true);
         return;

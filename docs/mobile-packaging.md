@@ -6,6 +6,7 @@
 - `android/` and `ios/` native projects already exist in the repo.
 - Deep links can be opened through the custom scheme `sentimospadel://app`.
 - The app still needs a real `VITE_API_BASE_URL` per environment.
+- Native builds store auth tokens with `@aparajita/capacitor-secure-storage`.
 
 ## Frontend prerequisites
 
@@ -62,6 +63,17 @@ Capacitor uses `CAPACITOR_ENV` to generate native config:
 - `production`: does not set `server.cleartext`; production mobile must use HTTPS.
 
 The iOS `NSAllowsArbitraryLoadsInWebContent` exception is not part of the base project anymore. Production iOS should not allow arbitrary HTTP web content.
+
+## Token storage
+
+Web builds keep auth tokens in `localStorage`.
+
+Native Capacitor builds use secure storage:
+
+- iOS: system Keychain
+- Android: Android Keystore-backed encrypted storage
+
+The app initializes token storage on startup before hydrating the current session. Access tokens and refresh tokens are cached in memory for API calls and written through to native secure storage on login, refresh and logout.
 
 ## Build and sync
 

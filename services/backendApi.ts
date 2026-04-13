@@ -1,3 +1,6 @@
+import { Capacitor } from '@capacitor/core';
+import { KeychainAccess, SecureStorage } from '@aparajita/capacitor-secure-storage';
+
 export type AnswerOption = 'A' | 'B' | 'C' | 'D' | 'E';
 export type UruguayCategory = 'PRIMERA' | 'SEGUNDA' | 'TERCERA' | 'CUARTA' | 'QUINTA' | 'SEXTA' | 'SEPTIMA';
 export type ClubVerificationStatus = 'NOT_REQUIRED' | 'PENDING' | 'VERIFIED' | 'REJECTED';
@@ -939,6 +942,12 @@ const resolveApiBaseUrl = (): string => {
 };
 
 const API_BASE_URL = resolveApiBaseUrl();
+const useNativeTokenStorage = () => Capacitor.isNativePlatform();
+const SECURE_STORAGE_PREFIX = 'sentimospadel.auth.';
+
+let accessTokenCache: string | null = null;
+let refreshTokenCache: string | null = null;
+let tokenStorageInitialized = false;
 
 type RequestOptions = RequestInit & {
   auth?: boolean;
@@ -946,7 +955,32 @@ type RequestOptions = RequestInit & {
   skipRefresh?: boolean;
 };
 
-const getStoredAccessToken = (): string | null => {
+export const initAuthTokenStorage = async (): Promise<void> => {
+  if (tokenStorageInitialized) {
+    return;
+  }
+
+  if (useNativeTokenStorage()) {
+    await SecureStorage.setKeyPrefix(SECURE_STORAGE_PREFIX);
+    const [accessToken, refreshToken] = await Promise.all([
+      SecureStorage.getItem(ACCESS_TOKEN_STORAGE_KEY),
+      SecureStorage.getItem(REFRESH_TOKEN_STORAGE_KEY),
+    ]);
+    accessTokenCache = accessToken;
+    refreshTokenCache = refreshToken;
+  } else if (typeof window !== 'undefined') {
+    accessTokenCache = window.localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY);
+    refreshTokenCache = window.localStorage.getItem(REFRESH_TOKEN_STORAGE_KEY);
+  }
+
+  tokenStorageInitialized = true;
+};
+
+export const getStoredAccessToken = (): string | null => {
+  if (tokenStorageInitialized) {
+    return accessTokenCache;
+  }
+
   if (typeof window === 'undefined') {
     return null;
   }
@@ -955,13 +989,29 @@ const getStoredAccessToken = (): string | null => {
 };
 
 export const storeAccessToken = (token: string): void => {
-  if (typeof window !== 'undefined') {
+  accessTokenCache = token;
+  tokenStorageInitialized = true;
+
+  if (useNativeTokenStorage()) {
+    void SecureStorage.set(ACCESS_TOKEN_STORAGE_KEY, token, true, false, KeychainAccess.whenUnlockedThisDeviceOnly);
+  } else if (typeof window !== 'undefined') {
     window.localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, token);
   }
 };
 
 export const storeAuthTokens = (accessToken: string, refreshToken?: string | null): void => {
-  if (typeof window !== 'undefined') {
+  accessTokenCache = accessToken;
+  if (refreshToken) {
+    refreshTokenCache = refreshToken;
+  }
+  tokenStorageInitialized = true;
+
+  if (useNativeTokenStorage()) {
+    void SecureStorage.set(ACCESS_TOKEN_STORAGE_KEY, accessToken, true, false, KeychainAccess.whenUnlockedThisDeviceOnly);
+    if (refreshToken) {
+      void SecureStorage.set(REFRESH_TOKEN_STORAGE_KEY, refreshToken, true, false, KeychainAccess.whenUnlockedThisDeviceOnly);
+    }
+  } else if (typeof window !== 'undefined') {
     window.localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, accessToken);
     if (refreshToken) {
       window.localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, refreshToken);
@@ -970,6 +1020,10 @@ export const storeAuthTokens = (accessToken: string, refreshToken?: string | nul
 };
 
 export const getStoredRefreshToken = (): string | null => {
+  if (tokenStorageInitialized) {
+    return refreshTokenCache;
+  }
+
   if (typeof window === 'undefined') {
     return null;
   }
@@ -978,7 +1032,14 @@ export const getStoredRefreshToken = (): string | null => {
 };
 
 export const clearAccessToken = (): void => {
-  if (typeof window !== 'undefined') {
+  accessTokenCache = null;
+  refreshTokenCache = null;
+  tokenStorageInitialized = true;
+
+  if (useNativeTokenStorage()) {
+    void SecureStorage.remove(ACCESS_TOKEN_STORAGE_KEY);
+    void SecureStorage.remove(REFRESH_TOKEN_STORAGE_KEY);
+  } else if (typeof window !== 'undefined') {
     window.localStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
     window.localStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY);
   }
