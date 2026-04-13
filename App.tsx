@@ -20,6 +20,7 @@ import { PlayerProfileEditView } from './components/PlayerProfileEditView';
 import { MatchInvitePreviewPanel } from './components/MatchInvitePreviewPanel';
 import { TournamentInvitePreviewPanel } from './components/TournamentInvitePreviewPanel';
 import { TournamentRegistrationView } from './components/TournamentRegistrationView';
+import { LegalDocumentModal } from './components/LegalDocumentModal';
 import { computeMatchRatingUpdatesElo, EloMatchInput } from './utils/eloCalculator';
 import {
     backendApi,
@@ -30,6 +31,8 @@ import {
     initAuthTokenStorage,
     storeAuthTokens,
     type AccountDeletionResponse,
+    type LegalDocumentResponse,
+    type LegalDocumentType,
     type MatchInviteLinkResponse,
     type MatchInvitePreviewResponse,
     type MyMatchesScope,
@@ -326,6 +329,9 @@ interface ViewProps {
     accountDeletionLoading?: boolean;
     accountDeletionSaving?: boolean;
     onRequestAccountDeletion?: (reason: string) => Promise<void>;
+    legalDocuments?: LegalDocumentResponse[];
+    legalDocumentsLoading?: boolean;
+    onOpenLegalDocument?: (type: LegalDocumentType) => void;
     onLaunchTournament?: (tournament: any) => void;
     onOpenTournamentStatus?: (tournament: any) => void;
     onAddTeamsToTournament?: (tournament: any) => void;
@@ -4394,6 +4400,9 @@ const ProfileView: React.FC<ViewProps> = ({
     accountDeletionLoading = false,
     accountDeletionSaving = false,
     onRequestAccountDeletion,
+    legalDocuments = [],
+    legalDocumentsLoading = false,
+    onOpenLegalDocument,
 }) => {
     // State for Filter
     const [timeRange, setTimeRange] = useState<'LAST_10' | '1M' | '3M' | '6M' | '1Y' | 'ALL'>('LAST_10');
@@ -4552,6 +4561,24 @@ const ProfileView: React.FC<ViewProps> = ({
   const accountDeletionRequestedAt = accountDeletionRequest?.requestedAt
     ? new Date(accountDeletionRequest.requestedAt).toLocaleDateString('es-UY', { day: '2-digit', month: 'short', year: 'numeric' })
     : null;
+  const hasLegalDocuments = legalDocuments.length > 0;
+  const legalDocumentButtons: Array<{ type: LegalDocumentType; label: string; description: string }> = [
+    {
+      type: 'TERMS_AND_CONDITIONS',
+      label: 'Terminos y condiciones',
+      description: 'Reglas de uso de la plataforma.',
+    },
+    {
+      type: 'PRIVACY_POLICY',
+      label: 'Politica de privacidad',
+      description: 'Tratamiento de datos personales.',
+    },
+    {
+      type: 'CONSENT_PREFERENCES_NOTICE',
+      label: 'Preferencias de consentimiento',
+      description: 'Uso de actividad, avisos y preferencias.',
+    },
+  ];
 
   const handlePreferenceToggle = (key: 'allowOperationalNotifications' | 'allowActivityTracking', checked: boolean) => {
     if (!onUpdateNotificationPreferences || notificationPreferencesSaving) {
@@ -4762,6 +4789,56 @@ const ProfileView: React.FC<ViewProps> = ({
                             >
                                 {accountDeletionSaving ? 'Enviando solicitud...' : 'Solicitar eliminacion de cuenta'}
                             </button>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {onOpenLegalDocument && (
+                <div className="mb-6 bg-dark-800 border border-dark-700 rounded-2xl p-4">
+                    <div className="flex items-start gap-3 mb-4">
+                        <div className="bg-blue-500/10 p-2.5 rounded-full border border-blue-500/20">
+                            <ShieldCheck size={18} className="text-blue-300" />
+                        </div>
+                        <div className="flex-1">
+                            <h3 className="text-white font-bold text-sm">Legal y privacidad</h3>
+                            <p className="text-gray-400 text-xs leading-relaxed mt-1">
+                                Consulta las versiones vigentes aceptadas para usar Sentimos Padel.
+                            </p>
+                        </div>
+                    </div>
+
+                    {legalDocumentsLoading ? (
+                        <div className="text-xs text-gray-400 bg-dark-900/60 border border-dark-700 rounded-xl px-3 py-2">
+                            Cargando documentos legales...
+                        </div>
+                    ) : (
+                        <div className="space-y-2">
+                            {legalDocumentButtons.map(item => {
+                                const document = legalDocuments.find(nextDocument => nextDocument.type === item.type);
+                                return (
+                                    <button
+                                        key={item.type}
+                                        type="button"
+                                        onClick={() => onOpenLegalDocument(item.type)}
+                                        disabled={!document}
+                                        className="w-full flex items-center justify-between gap-3 bg-dark-900/60 hover:bg-dark-900 disabled:opacity-50 border border-dark-700 rounded-xl px-3 py-3 text-left transition-colors"
+                                    >
+                                        <div>
+                                            <p className="text-white text-sm font-bold">{item.label}</p>
+                                            <p className="text-gray-400 text-xs">
+                                                {document ? `${item.description} Version ${document.version}.` : 'Documento no disponible.'}
+                                            </p>
+                                        </div>
+                                        <ChevronRight size={16} className="text-gray-500 shrink-0" />
+                                    </button>
+                                );
+                            })}
+                            {!hasLegalDocuments && (
+                                <p className="text-[10px] text-amber-300">
+                                    No se pudieron cargar documentos legales vigentes.
+                                </p>
+                            )}
                         </div>
                     )}
                 </div>
@@ -5089,6 +5166,9 @@ export default function App() {
   const [accountDeletionRequest, setAccountDeletionRequest] = useState<AccountDeletionResponse | null>(null);
   const [accountDeletionLoading, setAccountDeletionLoading] = useState(false);
   const [accountDeletionSaving, setAccountDeletionSaving] = useState(false);
+  const [legalDocuments, setLegalDocuments] = useState<LegalDocumentResponse[]>([]);
+  const [legalDocumentsLoading, setLegalDocumentsLoading] = useState(false);
+  const [activeLegalDocumentType, setActiveLegalDocumentType] = useState<LegalDocumentType | null>(null);
   const [tournamentSelectablePlayers, setTournamentSelectablePlayers] = useState<User[]>([]);
   const [tournamentClubOptions, setTournamentClubOptions] = useState<Club[]>([]);
   const [postMatchResult, setPostMatchResult] = useState<{ oldRating: number, newRating: number, delta: number } | null>(null);
@@ -5482,6 +5562,17 @@ export default function App() {
     } finally {
       setAccountDeletionSaving(false);
     }
+  };
+
+  const handleOpenLegalDocument = (type: LegalDocumentType) => {
+    const document = legalDocuments.find(nextDocument => nextDocument.type === type);
+    if (!document) {
+      setNotification('Documento legal no disponible en este momento.');
+      setTimeout(() => setNotification(null), 3500);
+      return;
+    }
+
+    setActiveLegalDocumentType(type);
   };
 
   const resetPendingMatchInvite = (clearFromUrl: boolean = true) => {
@@ -6130,6 +6221,35 @@ export default function App() {
     window.addEventListener(MOBILE_URL_EVENT_NAME, handleNativeUrl as EventListener);
     return () => {
       window.removeEventListener(MOBILE_URL_EVENT_NAME, handleNativeUrl as EventListener);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadLegalDocuments = async () => {
+      setLegalDocumentsLoading(true);
+      try {
+        const documents = await backendApi.getLegalDocuments();
+        if (!cancelled) {
+          setLegalDocuments(documents);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error('No se pudieron cargar documentos legales vigentes.', error);
+          setLegalDocuments([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setLegalDocumentsLoading(false);
+        }
+      }
+    };
+
+    void loadLegalDocuments();
+
+    return () => {
+      cancelled = true;
     };
   }, []);
 
@@ -8088,7 +8208,7 @@ export default function App() {
           />
         )}
         {currentTab === 'clubs' && <ClubsBookingView currentUser={currentUser} clubs={clubCatalog ?? undefined} onBook={handleBookMatch} onBack={currentUser.accountType === 'club' ? () => setCurrentTab('club_dashboard') : undefined} preferredClubId={currentUser.accountType === 'club' && currentUser.managedClubId != null ? `backend-club-${currentUser.managedClubId}` : undefined} title={currentUser.accountType === 'club' ? 'Crear partido' : 'Reservas'} />}
-        {currentTab === 'profile' && <ProfileView currentUser={currentUser} rankingPosition={currentUserRankingPosition} ratingHistory={ratingHistoryView} topPartners={topPartnersInsights} topRivals={topRivalsInsights} clubRankings={clubRankingSummaries} matches={matches} onOpenClubRankings={() => setShowClubRankings(true)} onOpenTopPartners={() => setShowTopPartners(true)} onOpenTopRivals={() => setShowTopRivals(true)} onUserClick={setSelectedPublicUser} onOpenNationalRanking={() => setShowNationalRanking(true)} onOpenMatchHistory={() => setShowProfileMatchHistory(true)} onOpenPlayerClubVerification={() => setShowPlayerClubVerification(true)} onOpenEditProfile={() => setShowEditPlayerProfile(true)} notificationPreferences={notificationPreferences} notificationPreferencesLoading={notificationPreferencesLoading} notificationPreferencesSaving={notificationPreferencesSaving} onUpdateNotificationPreferences={handleUpdateNotificationPreferences} accountDeletionRequest={accountDeletionRequest} accountDeletionLoading={accountDeletionLoading} accountDeletionSaving={accountDeletionSaving} onRequestAccountDeletion={handleRequestAccountDeletion} />}
+        {currentTab === 'profile' && <ProfileView currentUser={currentUser} rankingPosition={currentUserRankingPosition} ratingHistory={ratingHistoryView} topPartners={topPartnersInsights} topRivals={topRivalsInsights} clubRankings={clubRankingSummaries} matches={matches} onOpenClubRankings={() => setShowClubRankings(true)} onOpenTopPartners={() => setShowTopPartners(true)} onOpenTopRivals={() => setShowTopRivals(true)} onUserClick={setSelectedPublicUser} onOpenNationalRanking={() => setShowNationalRanking(true)} onOpenMatchHistory={() => setShowProfileMatchHistory(true)} onOpenPlayerClubVerification={() => setShowPlayerClubVerification(true)} onOpenEditProfile={() => setShowEditPlayerProfile(true)} notificationPreferences={notificationPreferences} notificationPreferencesLoading={notificationPreferencesLoading} notificationPreferencesSaving={notificationPreferencesSaving} onUpdateNotificationPreferences={handleUpdateNotificationPreferences} accountDeletionRequest={accountDeletionRequest} accountDeletionLoading={accountDeletionLoading} accountDeletionSaving={accountDeletionSaving} onRequestAccountDeletion={handleRequestAccountDeletion} legalDocuments={legalDocuments} legalDocumentsLoading={legalDocumentsLoading} onOpenLegalDocument={handleOpenLegalDocument} />}
 
         {tournamentToLaunch && <LaunchTournamentView tournament={tournamentToLaunch} onClose={() => setTournamentToLaunch(null)} onLaunch={handleLaunchTournament} />}
         {selectedTournamentStatus && (
@@ -8157,6 +8277,13 @@ export default function App() {
                 saving={savingPlayerProfile}
                 onClose={() => setShowEditPlayerProfile(false)}
                 onSave={handleUpdateMyPlayerProfile}
+            />
+        )}
+
+        {activeLegalDocumentType && legalDocuments.find(document => document.type === activeLegalDocumentType) && (
+            <LegalDocumentModal
+                document={legalDocuments.find(document => document.type === activeLegalDocumentType)!}
+                onClose={() => setActiveLegalDocumentType(null)}
             />
         )}
 
