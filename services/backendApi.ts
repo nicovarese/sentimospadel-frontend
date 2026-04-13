@@ -84,6 +84,8 @@ export interface EmailVerificationDispatchResponse {
 
 export interface LoginResponse {
   accessToken: string;
+  refreshToken?: string | null;
+  refreshTokenExpiresAt?: string | null;
   tokenType: string;
   id: number;
   email: string;
@@ -919,6 +921,7 @@ export class BackendApiError extends Error {
 }
 
 export const ACCESS_TOKEN_STORAGE_KEY = 'sentimos.accessToken';
+export const REFRESH_TOKEN_STORAGE_KEY = 'sentimos.refreshToken';
 
 const DEFAULT_API_BASE_URL = 'http://localhost:8081';
 
@@ -940,6 +943,7 @@ const API_BASE_URL = resolveApiBaseUrl();
 type RequestOptions = RequestInit & {
   auth?: boolean;
   token?: string | null;
+  skipRefresh?: boolean;
 };
 
 const getStoredAccessToken = (): string | null => {
@@ -956,10 +960,61 @@ export const storeAccessToken = (token: string): void => {
   }
 };
 
+export const storeAuthTokens = (accessToken: string, refreshToken?: string | null): void => {
+  if (typeof window !== 'undefined') {
+    window.localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, accessToken);
+    if (refreshToken) {
+      window.localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, refreshToken);
+    }
+  }
+};
+
+export const getStoredRefreshToken = (): string | null => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  return window.localStorage.getItem(REFRESH_TOKEN_STORAGE_KEY);
+};
+
 export const clearAccessToken = (): void => {
   if (typeof window !== 'undefined') {
     window.localStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
+    window.localStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY);
   }
+};
+
+let refreshTokenRequest: Promise<string | null> | null = null;
+
+const refreshStoredAccessToken = async (): Promise<string | null> => {
+  if (refreshTokenRequest) {
+    return refreshTokenRequest;
+  }
+
+  const refreshToken = getStoredRefreshToken();
+  if (!refreshToken) {
+    return null;
+  }
+
+  refreshTokenRequest = apiRequest<LoginResponse>('/api/auth/refresh', {
+    method: 'POST',
+    auth: false,
+    body: JSON.stringify({ refreshToken }),
+    skipRefresh: true,
+  })
+    .then(response => {
+      storeAuthTokens(response.accessToken, response.refreshToken);
+      return response.accessToken;
+    })
+    .catch(error => {
+      clearAccessToken();
+      throw error;
+    })
+    .finally(() => {
+      refreshTokenRequest = null;
+    });
+
+  return refreshTokenRequest;
 };
 
 async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -987,6 +1042,17 @@ async function apiRequest<T>(path: string, options: RequestOptions = {}): Promis
     : await response.text();
 
   if (!response.ok) {
+    if (response.status === 401 && options.auth !== false && !options.skipRefresh) {
+      const refreshedToken = await refreshStoredAccessToken();
+      if (refreshedToken) {
+        return apiRequest<T>(path, {
+          ...options,
+          token: refreshedToken,
+          skipRefresh: true,
+        });
+      }
+    }
+
     const message =
       typeof payload === 'object' && payload && 'message' in payload
         ? String((payload as { message?: unknown }).message ?? 'Request failed')
@@ -1003,6 +1069,13 @@ export const backendApi = {
       method: 'POST',
       auth: false,
       body: JSON.stringify(request),
+    }),
+
+  logout: (refreshToken: string) =>
+    apiRequest<{ message: string }>('/api/auth/logout', {
+      method: 'POST',
+      auth: false,
+      body: JSON.stringify({ refreshToken }),
     }),
 
   register: (request: RegisterRequest) =>

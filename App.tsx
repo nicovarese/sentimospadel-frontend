@@ -26,7 +26,8 @@ import {
     backendApi,
     BackendApiError,
     clearAccessToken,
-    storeAccessToken,
+    getStoredRefreshToken,
+    storeAuthTokens,
     type AccountDeletionResponse,
     type MatchInviteLinkResponse,
     type MatchInvitePreviewResponse,
@@ -5830,7 +5831,7 @@ export default function App() {
 
       const loginResponse = await backendApi.login({ email, password });
       ensureAuthModeMatchesRole(authAccountMode, loginResponse.role);
-      storeAccessToken(loginResponse.accessToken);
+      storeAuthTokens(loginResponse.accessToken, loginResponse.refreshToken);
       setAuthNotice(null);
       setPendingVerificationEmail('');
       await hydrateAuthenticatedUser();
@@ -6052,9 +6053,15 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    const refreshToken = getStoredRefreshToken();
     void unregisterNativePushDevice().catch(error => {
       console.error('No se pudo desregistrar el dispositivo de push notifications.', error);
     });
+    if (refreshToken) {
+      void backendApi.logout(refreshToken).catch(error => {
+        console.error('No se pudo cerrar la sesion en el backend.', error);
+      });
+    }
     clearAccessToken();
     clearStoredDisplayName();
     setIsAuthenticated(false);
